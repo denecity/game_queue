@@ -65,7 +65,7 @@ export const api = {
     app(appid: number): Promise<SteamSearchResult> {
       return request<SteamSearchResult>(`/api/steam/app/${appid}`)
     },
-    importWishlist(url: string): Promise<{ added: number; games: Game[] }> {
+    importWishlist(url: string): Promise<{ added: number; skipped: number; games: Game[] }> {
       return request('/api/games/import-wishlist', { method: 'POST', body: JSON.stringify({ url }) })
     },
   },

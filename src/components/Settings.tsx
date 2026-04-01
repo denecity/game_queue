@@ -14,6 +14,8 @@ interface Props {
   onClose: () => void
   onDataChanged: () => void
   games: Game[]
+  cardHeight: number
+  onCardHeightChange: (h: number) => void
 }
 
 const SYNC_SOURCES_KEY = 'gq_sync_sources'
@@ -30,7 +32,7 @@ function saveSources(sources: SyncSource[]) {
   localStorage.setItem(SYNC_SOURCES_KEY, JSON.stringify(sources))
 }
 
-export function Settings({ onClose, onDataChanged, games }: Props) {
+export function Settings({ onClose, onDataChanged, games, cardHeight, onCardHeightChange }: Props) {
   const [sources, setSources] = useState<SyncSource[]>(loadSources)
   const [newUrl, setNewUrl] = useState('')
   const [newType, setNewType] = useState<'wishlist' | 'library'>('wishlist')
@@ -69,16 +71,17 @@ export function Settings({ onClose, onDataChanged, games }: Props) {
       let msg: string
       if (source.type === 'wishlist') {
         const r = await api.steam.importWishlist(source.url)
-        msg = `Added ${r.added} games`
+        msg = `✓ Added ${r.added} game${r.added !== 1 ? 's' : ''}${r.skipped ? ` (${r.skipped} already in library)` : ''}`
       } else {
         const r = await api.library.import(source.url)
-        msg = `Added ${r.added} games (${r.skipped} already present, ${r.total} total in library)`
+        msg = `✓ Added ${r.added} game${r.added !== 1 ? 's' : ''} (${r.skipped} already present, ${r.total} total in library)`
       }
       setSources(prev => prev.map(s => s.id === source.id ? { ...s, lastSynced: new Date().toISOString() } : s))
       setSyncResults(prev => ({ ...prev, [source.id]: msg }))
       onDataChanged()
     } catch (e) {
-      setSyncResults(prev => ({ ...prev, [source.id]: 'Failed: ' + String(e) }))
+      const msg = e instanceof Error ? e.message : String(e)
+      setSyncResults(prev => ({ ...prev, [source.id]: '✗ ' + msg }))
     } finally {
       setSyncingId(null)
     }
@@ -157,7 +160,9 @@ export function Settings({ onClose, onDataChanged, games }: Props) {
                       <div className="text-xs text-slate-500">Last synced: {new Date(source.lastSynced).toLocaleDateString()}</div>
                     )}
                     {syncResults[source.id] && (
-                      <div className="text-xs text-[#4fd1c5]">{syncResults[source.id]}</div>
+                      <div className={`text-xs break-words ${syncResults[source.id].startsWith('✓') ? 'text-[#4fd1c5]' : 'text-amber-400'}`}>
+                        {syncResults[source.id]}
+                      </div>
                     )}
                   </div>
                   <button
@@ -213,6 +218,25 @@ export function Settings({ onClose, onDataChanged, games }: Props) {
                 Add
               </button>
             </div>
+          </div>
+        </section>
+
+        {/* Widget size */}
+        <section className="mb-6">
+          <h3 className="text-sm font-semibold text-slate-300 mb-2">Widget Size</h3>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-500 w-12">Compact</span>
+            <input
+              type="range"
+              min={48}
+              max={120}
+              step={8}
+              value={cardHeight}
+              onChange={e => onCardHeightChange(parseInt(e.target.value, 10))}
+              className="flex-1 accent-[#4fd1c5]"
+            />
+            <span className="text-xs text-slate-500 w-12 text-right">Large</span>
+            <span className="text-xs font-mono text-[#4fd1c5] w-10 text-right">{cardHeight}px</span>
           </div>
         </section>
 

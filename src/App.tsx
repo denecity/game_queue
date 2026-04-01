@@ -13,16 +13,24 @@ import type { SteamSearchResult, TabName, Game } from './lib/types'
 import { api } from './lib/api'
 
 const KEY_PRICE_REFRESH_KEY = 'gq_last_key_refresh'
-const KEY_PRICE_REFRESH_INTERVAL = 6 * 60 * 60 * 1000 // 6 hours
+const KEY_PRICE_REFRESH_INTERVAL = 6 * 60 * 60 * 1000
 
 export default function App() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [activeTab, setActiveTab] = useState<TabName>('queue')
-  // null = modal closed, 'custom' = custom game, SteamSearchResult = steam game
   const [addModalPrefill, setAddModalPrefill] = useState<SteamSearchResult | null | 'custom'>(null)
-  // Extra games queued to bulk-add alongside the modal's current prefill
   const [bulkQueue, setBulkQueue] = useState<SteamSearchResult[]>([])
   const [showSettings, setShowSettings] = useState(false)
+
+  // Card height preference (px) — drives --card-height CSS variable
+  const [cardHeight, setCardHeight] = useState<number>(() =>
+    parseInt(localStorage.getItem('gq_card_height') ?? '72', 10)
+  )
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--card-height', cardHeight + 'px')
+    localStorage.setItem('gq_card_height', String(cardHeight))
+  }, [cardHeight])
 
   const {
     games,
@@ -42,14 +50,13 @@ export default function App() {
     refetch,
   } = useGames()
 
-  // Auto-refresh key prices once per 6h on load
   useEffect(() => {
     const last = parseInt(localStorage.getItem(KEY_PRICE_REFRESH_KEY) ?? '0', 10)
     if (Date.now() - last > KEY_PRICE_REFRESH_INTERVAL) {
       api.keyforsteam.refresh().then(() => {
         localStorage.setItem(KEY_PRICE_REFRESH_KEY, String(Date.now()))
         refetch()
-      }).catch(() => { /* silent — non-critical */ })
+      }).catch(() => {})
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -67,19 +74,13 @@ export default function App() {
     }
   }, [addModalPrefill])
 
-  useKeyboardShortcuts({
-    onFocusSearch: focusSearch,
-    onTabSwitch: setActiveTab,
-    onEscape: handleEscape,
-  })
+  useKeyboardShortcuts({ onFocusSearch: focusSearch, onTabSwitch: setActiveTab, onEscape: handleEscape })
 
   async function handleSelectSearchResult(result: SteamSearchResult) {
-    // If modal is already open, queue this game instead of replacing
     if (addModalPrefill !== null && addModalPrefill !== 'custom') {
       setBulkQueue(prev => prev.some(r => r.appid === result.appid) ? prev : [...prev, result])
       return
     }
-    // Fetch full details
     try {
       const full = await api.steam.app(result.appid)
       setAddModalPrefill({ ...result, ...full })
@@ -95,7 +96,6 @@ export default function App() {
       else if (saved.status === 'done') setActiveTab('archive')
       else setActiveTab('queue')
     }
-    // If there are more in the bulk queue, pop the next one
     if (bulkQueue.length > 0) {
       const [next, ...rest] = bulkQueue
       setBulkQueue(rest)
@@ -111,9 +111,7 @@ export default function App() {
   }
 
   async function handleAddAll(partials: Partial<Game>[]) {
-    for (const partial of partials) {
-      await addGame(partial)
-    }
+    for (const partial of partials) await addGame(partial)
     setAddModalPrefill(null)
     setBulkQueue([])
     refetch()
@@ -135,21 +133,13 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0f1115] text-slate-200">
       <div className="max-w-4xl mx-auto px-4 py-6">
-        {/* Header */}
         <header className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
             🎮 <span>GameQueue</span>
           </h1>
-          <button
-            onClick={() => setShowSettings(true)}
-            className="btn-ghost text-lg"
-            title="Settings"
-          >
-            ⚙
-          </button>
+          <button onClick={() => setShowSettings(true)} className="btn-ghost text-lg" title="Settings">⚙</button>
         </header>
 
-        {/* Search bar */}
         <div className="flex items-center gap-2 mb-4">
           <SearchBar
             onSelectResult={handleSelectSearchResult}
@@ -158,24 +148,13 @@ export default function App() {
           />
         </div>
 
-        {/* Tabs + filter */}
         <div className="flex items-center justify-between mb-4">
           <TabBar
             active={activeTab}
-            counts={{
-              queue: queueGames.length,
-              wishlist: wishlistGames.length,
-              archive: archiveGames.length,
-            }}
+            counts={{ queue: queueGames.length, wishlist: wishlistGames.length, archive: archiveGames.length }}
             onSwitch={setActiveTab}
           />
-          <FilterSort
-            sort={sort}
-            onSortChange={setSort}
-            filter={filter}
-            onFilterChange={setFilter}
-            availableTags={allTags}
-          />
+          <FilterSort sort={sort} onSortChange={setSort} filter={filter} onFilterChange={setFilter} availableTags={allTags} />
         </div>
 
         {!isManualSort && activeTab !== 'archive' && (
@@ -187,10 +166,7 @@ export default function App() {
         {loading ? (
           <div className="flex items-center justify-center py-20 text-slate-500">Loading…</div>
         ) : totalEmpty ? (
-          <EmptyState
-            onImportWishlist={() => setShowSettings(true)}
-            onAddCustom={() => setAddModalPrefill('custom')}
-          />
+          <EmptyState onImportWishlist={() => setShowSettings(true)} onAddCustom={() => setAddModalPrefill('custom')} />
         ) : currentGames.length === 0 ? (
           <div className="text-center py-12 text-slate-500">
             {activeTab === 'queue' && 'No games in your queue.'}
@@ -198,17 +174,10 @@ export default function App() {
             {activeTab === 'archive' && "You haven't completed any games yet."}
           </div>
         ) : (
-          <GameList
-            games={currentGames}
-            onUpdate={updateGame}
-            onDelete={removeGame}
-            onReorder={reorderGames}
-            draggable={isDraggable}
-          />
+          <GameList games={currentGames} onUpdate={updateGame} onDelete={removeGame} onReorder={reorderGames} draggable={isDraggable} />
         )}
       </div>
 
-      {/* Add game modal */}
       {addModalPrefill !== null && (
         <AddGameModal
           prefill={addModalPrefill === 'custom' ? null : addModalPrefill}
@@ -226,6 +195,8 @@ export default function App() {
           onClose={() => setShowSettings(false)}
           onDataChanged={() => { setShowSettings(false); refetch() }}
           games={games}
+          cardHeight={cardHeight}
+          onCardHeightChange={setCardHeight}
         />
       )}
 

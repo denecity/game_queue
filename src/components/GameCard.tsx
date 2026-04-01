@@ -13,26 +13,20 @@ interface Props {
   draggable: boolean
 }
 
-// Steam header images are 460×215 px → ratio 460/215 ≈ 2.14
-// We fix the width and let the height follow: h = w / 2.14
-// Using w-[107px] → h ≈ 50px, close enough; we use aspect-[460/215]
+// Steam header images are 460×215 px (ratio ≈ 2.14:1).
+// The collapsed row height is controlled by --card-height CSS variable.
 function GameImage({ game }: { game: Game }) {
   const [errored, setErrored] = useState(false)
+  const style = { aspectRatio: '460 / 215', height: '100%', flexShrink: 0 }
   if (!game.image_url || errored) {
     return (
-      <div
-        className="flex-shrink-0 self-stretch bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center rounded overflow-hidden"
-        style={{ aspectRatio: '460/215', height: '100%' }}
-      >
+      <div style={style} className="bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center overflow-hidden">
         <span className="text-lg">🎮</span>
       </div>
     )
   }
   return (
-    <div
-      className="flex-shrink-0 self-stretch overflow-hidden rounded"
-      style={{ aspectRatio: '460/215', height: '100%' }}
-    >
+    <div style={style} className="overflow-hidden">
       <img
         src={game.image_url}
         alt={game.name}
@@ -70,9 +64,7 @@ export function GameCard({ game, onUpdate, onDelete, draggable }: Props) {
 
   const handleNotesChange = useCallback((notes: string) => {
     if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
-    notesTimerRef.current = setTimeout(() => {
-      onUpdate(game.id, { notes })
-    }, 1000)
+    notesTimerRef.current = setTimeout(() => onUpdate(game.id, { notes }), 1000)
   }, [game.id, onUpdate])
 
   const keyStale = isKeyPriceStale(game.key_price_updated)
@@ -83,40 +75,39 @@ export function GameCard({ game, onUpdate, onDelete, draggable }: Props) {
       style={style as React.CSSProperties}
       className={`card card-hover mb-2 ${isDragging ? 'shadow-2xl' : ''}`}
     >
-      {/* Collapsed row */}
+      {/* Collapsed row — height driven by CSS variable */}
       <div
-        className="flex items-stretch gap-0 cursor-pointer select-none overflow-hidden rounded-lg"
-        style={{ minHeight: '64px' }}
+        className="flex items-stretch cursor-pointer select-none overflow-hidden rounded-lg"
+        style={{ height: 'var(--card-height, 72px)' }}
         onClick={() => setExpanded(e => !e)}
       >
         {/* Drag handle */}
-        <div
-          {...(draggable ? { ...attributes, ...listeners } : {})}
-          className={`flex-shrink-0 flex items-center text-slate-600 hover:text-slate-400 transition-colors px-2
-            ${draggable ? 'cursor-grab active:cursor-grabbing' : 'opacity-0 pointer-events-none w-0'}`}
-          onClick={e => e.stopPropagation()}
-        >
-          ⠿
-        </div>
+        {draggable && (
+          <div
+            {...attributes} {...listeners}
+            className="flex-shrink-0 flex items-center text-slate-600 hover:text-slate-400 transition-colors px-2 cursor-grab active:cursor-grabbing"
+            onClick={e => e.stopPropagation()}
+          >
+            ⠿
+          </div>
+        )}
 
-        {/* Image — fills full height */}
+        {/* Thumbnail — 460:215 aspect ratio, full card height */}
         <GameImage game={game} />
 
         {/* Info */}
-        <div className="flex-1 min-w-0 flex flex-col justify-center px-3 py-2">
-          <div className="flex items-center gap-2">
-            <div className="font-semibold text-slate-100 truncate text-sm">{game.name}</div>
+        <div className="flex-1 min-w-0 flex flex-col justify-center px-3 py-1 overflow-hidden">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="font-semibold text-slate-100 truncate text-sm">{game.name}</span>
             {game.steam_url && (
               <a
                 href={game.steam_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-slate-500 hover:text-[#4fd1c5] transition-colors flex-shrink-0 text-xs"
+                className="text-slate-500 hover:text-[#4fd1c5] transition-colors flex-shrink-0 text-xs leading-none"
                 title="Open on Steam"
                 onClick={e => e.stopPropagation()}
-              >
-                ↗
-              </a>
+              >↗</a>
             )}
           </div>
           <div className="text-xs text-slate-500 truncate mt-0.5">
@@ -125,43 +116,38 @@ export function GameCard({ game, onUpdate, onDelete, draggable }: Props) {
           <div className="flex items-center gap-2 mt-1">
             <StatusBadge status={game.status} onChange={handleStatusChange} />
             {game.player_count != null && (
-              <span className="text-xs text-slate-500">
-                {formatPlayerCount(game.player_count)} ♟
-              </span>
+              <span className="text-xs text-slate-500">{formatPlayerCount(game.player_count)} ♟</span>
             )}
           </div>
         </div>
 
         {/* Price + Rating */}
-        <div className="flex-shrink-0 text-right flex flex-col items-end justify-center gap-1 pr-3" onClick={e => e.stopPropagation()}>
+        <div
+          className="flex-shrink-0 text-right flex flex-col items-end justify-center gap-1 pr-3"
+          onClick={e => e.stopPropagation()}
+        >
           {game.price && (
             game.steam_url
               ? <a href={game.steam_url} target="_blank" rel="noopener noreferrer" className="text-sm text-slate-300 font-mono hover:text-[#4fd1c5] transition-colors" onClick={e => e.stopPropagation()}>{game.price}</a>
-              : <div className="text-sm text-slate-300 font-mono">{game.price}</div>
+              : <span className="text-sm text-slate-300 font-mono">{game.price}</span>
           )}
           {game.key_price && game.key_price_url && (
             <a
               href={game.key_price_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-[#4fd1c5] hover:text-[#38b2ac] flex items-center gap-0.5"
+              className="text-xs text-[#4fd1c5] hover:text-[#38b2ac]"
               title={keyStale ? 'Price may be outdated' : 'Best key price'}
               onClick={e => e.stopPropagation()}
-            >
-              🔑 {game.key_price}{keyStale && ' ⏳'}
-            </a>
+            >🔑 {game.key_price}{keyStale && ' ⏳'}</a>
           )}
-          <RatingSelector
-            rating={game.rating}
-            onChange={r => onUpdate(game.id, { rating: r })}
-          />
+          <RatingSelector rating={game.rating} onChange={r => onUpdate(game.id, { rating: r })} />
         </div>
       </div>
 
       {/* Expanded section */}
       {expanded && (
         <div className="border-t border-[#2a2d35] px-4 py-3 animate-fade-in">
-          {/* Tags + player counts + dates */}
           <div className="flex flex-wrap gap-1 mb-2">
             {game.tags.map(t => (
               <span key={t} className="bg-[#20242c] border border-[#2a2d35] text-xs px-2 py-0.5 rounded-full text-slate-400">{t}</span>
@@ -176,12 +162,9 @@ export function GameCard({ game, onUpdate, onDelete, draggable }: Props) {
               <span>Key updated {formatRelativeTime(game.key_price_updated)}{keyStale ? ' ⏳' : ''}</span>
             )}
             <span title={game.date_added}>Added {formatDate(game.date_added)}</span>
-            {game.date_completed && (
-              <span title={game.date_completed}>Completed {formatDate(game.date_completed)}</span>
-            )}
+            {game.date_completed && <span>Completed {formatDate(game.date_completed)}</span>}
           </div>
 
-          {/* Notes */}
           <div className="mb-3">
             <label className="block text-xs text-slate-400 mb-1">Notes</label>
             <textarea
@@ -193,71 +176,33 @@ export function GameCard({ game, onUpdate, onDelete, draggable }: Props) {
             />
           </div>
 
-          {/* Actions */}
           <div className="flex justify-between items-center">
             {confirmDelete ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-400">Are you sure?</span>
-                <button
-                  onClick={e => { e.stopPropagation(); onDelete(game.id) }}
-                  className="text-xs text-red-400 hover:text-red-300 border border-red-400/30 rounded px-2 py-1"
-                >
-                  Delete
-                </button>
-                <button
-                  onClick={e => { e.stopPropagation(); setConfirmDelete(false) }}
-                  className="text-xs text-slate-400 hover:text-slate-200"
-                >
-                  Cancel
-                </button>
+                <button onClick={e => { e.stopPropagation(); onDelete(game.id) }} className="text-xs text-red-400 hover:text-red-300 border border-red-400/30 rounded px-2 py-1">Delete</button>
+                <button onClick={e => { e.stopPropagation(); setConfirmDelete(false) }} className="text-xs text-slate-400 hover:text-slate-200">Cancel</button>
               </div>
             ) : (
-              <button
-                onClick={e => { e.stopPropagation(); setConfirmDelete(true) }}
-                className="text-xs text-slate-500 hover:text-red-400 transition-colors"
-              >
-                🗑 Delete
-              </button>
+              <button onClick={e => { e.stopPropagation(); setConfirmDelete(true) }} className="text-xs text-slate-500 hover:text-red-400 transition-colors">🗑 Delete</button>
             )}
-            <button
-              onClick={e => { e.stopPropagation(); setExpanded(false) }}
-              className="text-xs text-slate-400 hover:text-slate-200"
-            >
-              Collapse ▲
-            </button>
+            <button onClick={e => { e.stopPropagation(); setExpanded(false) }} className="text-xs text-slate-400 hover:text-slate-200">Collapse ▲</button>
           </div>
         </div>
       )}
 
-      {/* Rating prompt when archiving unrated game */}
       {pendingStatus && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-          onClick={() => setPendingStatus(null)}
-        >
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setPendingStatus(null)}>
           <div className="card p-6 w-80 shadow-2xl animate-fade-in" onClick={e => e.stopPropagation()}>
             <h3 className="font-semibold text-slate-100 mb-2">Rate before archiving?</h3>
             <p className="text-sm text-slate-400 mb-4">You haven't rated <strong className="text-slate-200">{game.name}</strong> yet.</p>
             <RatingSelector
               rating={game.rating}
-              onChange={r => {
-                onUpdate(game.id, { rating: r, status: pendingStatus as Game['status'] })
-                setPendingStatus(null)
-              }}
+              onChange={r => { onUpdate(game.id, { rating: r, status: pendingStatus as Game['status'] }); setPendingStatus(null) }}
             />
             <div className="flex gap-2 mt-4">
-              <button
-                onClick={() => { onUpdate(game.id, { status: pendingStatus as Game['status'] }); setPendingStatus(null) }}
-                className="flex-1 text-sm text-slate-400 hover:text-slate-200 border border-[#2a2d35] rounded py-1.5"
-              >
-                Skip
-              </button>
-              <button
-                onClick={() => setPendingStatus(null)}
-                className="flex-1 text-sm text-slate-400 hover:text-slate-200 border border-[#2a2d35] rounded py-1.5"
-              >
-                Cancel
-              </button>
+              <button onClick={() => { onUpdate(game.id, { status: pendingStatus as Game['status'] }); setPendingStatus(null) }} className="flex-1 text-sm text-slate-400 hover:text-slate-200 border border-[#2a2d35] rounded py-1.5">Skip</button>
+              <button onClick={() => setPendingStatus(null)} className="flex-1 text-sm text-slate-400 hover:text-slate-200 border border-[#2a2d35] rounded py-1.5">Cancel</button>
             </div>
           </div>
         </div>

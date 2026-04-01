@@ -60,18 +60,32 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const xmlRes = await fetchT(gamesXmlUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GameQueue/1.0)' },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/xml,application/xml,*/*',
+        'Referer': 'https://steamcommunity.com/',
+      },
     })
 
     if (!xmlRes.ok) {
-      return Response.json({ error: `Steam returned ${xmlRes.status}. Make sure your profile and game library are public.` }, { status: 502 })
+      return Response.json({ error: `Steam returned HTTP ${xmlRes.status}. Check that your profile URL is correct.` }, { status: 502 })
     }
 
     const xml = await xmlRes.text()
 
-    // Check for error node
-    if (xml.includes('<error>') || !xml.includes('<games>')) {
-      return Response.json({ error: 'Could not load game library. Make sure your Steam profile and game details are set to Public.' }, { status: 400 })
+    // Steam returns an <error> node when game details are private
+    if (xml.includes('<error>')) {
+      const errMatch = xml.match(/<error>(.*?)<\/error>/)
+      const detail = errMatch?.[1] ?? 'private profile'
+      return Response.json({
+        error: `Steam says: "${detail}". To fix: Steam → Edit Profile → Privacy Settings → set "Game details" to Public.`
+      }, { status: 400 })
+    }
+
+    if (!xml.includes('<games>')) {
+      return Response.json({
+        error: 'No game library found. Make sure the URL is a valid Steam profile and "Game details" is set to Public in your Steam privacy settings.'
+      }, { status: 400 })
     }
 
     const allGames = parseGamesXml(xml)

@@ -38,18 +38,23 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const wishRes = await fetchT(wishlistDataUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; GameQueue/1.0)',
-        'Cookie': 'birthtime=0; mature_content=1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/javascript, */*; q=0.01',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Referer': 'https://store.steampowered.com/',
+        'Cookie': 'birthtime=0; mature_content=1; lastagecheckage=1-0-1990',
       },
     })
 
     if (!wishRes.ok) {
-      return Response.json({ error: `Steam returned ${wishRes.status}. Make sure your wishlist is public.` }, { status: 502 })
+      return Response.json({ error: `Steam returned HTTP ${wishRes.status}. Make sure your wishlist is set to Public in Steam privacy settings.` }, { status: 502 })
     }
 
     const contentType = wishRes.headers.get('content-type') ?? ''
     if (!contentType.includes('application/json')) {
-      return Response.json({ error: 'Steam returned non-JSON. The wishlist may be private or the URL is wrong.' }, { status: 502 })
+      const preview = (await wishRes.text()).slice(0, 200)
+      return Response.json({ error: `Steam returned an HTML page instead of wishlist data. The wishlist may be private or Steam is rate-limiting. Preview: ${preview}` }, { status: 502 })
     }
 
     const wishData = await wishRes.json() as Record<string, { name: string; priority: number }>
