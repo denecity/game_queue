@@ -5,7 +5,7 @@ pages_build_output_dir = "./dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "gamequeue-db"
-database_id = "YOUR_D1_DATABASE_ID"
+database_id = "2a2c1631-3b8a-4a22-bc41-14bf103b2b2d"
 
 # Cron trigger for key price refresh is configured in the Cloudflare Dashboard
 # under Workers & Pages > your project > Settings > Triggers > Cron Triggers
