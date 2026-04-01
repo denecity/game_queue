@@ -23,6 +23,7 @@ export function AddGameModal({
   const [name, setName] = useState(prefill?.name ?? '')
   const [price, setPrice] = useState(prefill?.price ?? '')
   const [imageUrl, setImageUrl] = useState(prefill?.image_url ?? '')
+  const [storeUrl, setStoreUrl] = useState('')
   const [tags, setTags] = useState((prefill?.tags ?? []).join(', '))
   const [status, setStatus] = useState<GameStatus>(defaultStatusForTab(activeTab))
   const [notes, setNotes] = useState('')
@@ -41,7 +42,9 @@ export function AddGameModal({
       notes: notes.trim() || null,
       steam_app_id: prefill?.appid ?? null,
       is_custom: !prefill?.appid,
-      steam_url: prefill?.appid ? `https://store.steampowered.com/app/${prefill.appid}/` : null,
+      steam_url: prefill?.appid
+        ? `https://store.steampowered.com/app/${prefill.appid}/`
+        : (storeUrl.trim() || null),
     })
   }
 
@@ -153,15 +156,26 @@ export function AddGameModal({
           </div>
 
           {!prefill && (
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Image URL</label>
-              <input
-                value={imageUrl}
-                onChange={e => setImageUrl(e.target.value)}
-                placeholder="https://..."
-                className="w-full bg-[#20242c] border border-[#2a2d35] rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-[#4fd1c5]"
-              />
-            </div>
+            <>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Store / Product URL</label>
+                <input
+                  value={storeUrl}
+                  onChange={e => setStoreUrl(e.target.value)}
+                  placeholder="https://store.steampowered.com/app/... or any store link"
+                  className="w-full bg-[#20242c] border border-[#2a2d35] rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-[#4fd1c5]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Image URL</label>
+                <input
+                  value={imageUrl}
+                  onChange={e => setImageUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full bg-[#20242c] border border-[#2a2d35] rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-[#4fd1c5]"
+                />
+              </div>
+            </>
           )}
 
           <div>

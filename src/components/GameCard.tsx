@@ -13,17 +13,26 @@ interface Props {
   draggable: boolean
 }
 
+// Steam header images are 460×215 px → ratio 460/215 ≈ 2.14
+// We fix the width and let the height follow: h = w / 2.14
+// Using w-[107px] → h ≈ 50px, close enough; we use aspect-[460/215]
 function GameImage({ game }: { game: Game }) {
   const [errored, setErrored] = useState(false)
   if (!game.image_url || errored) {
     return (
-      <div className="w-28 self-stretch rounded bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center flex-shrink-0">
+      <div
+        className="flex-shrink-0 self-stretch bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center rounded overflow-hidden"
+        style={{ aspectRatio: '460/215', height: '100%' }}
+      >
         <span className="text-lg">🎮</span>
       </div>
     )
   }
   return (
-    <div className="w-28 self-stretch flex-shrink-0 overflow-hidden rounded">
+    <div
+      className="flex-shrink-0 self-stretch overflow-hidden rounded"
+      style={{ aspectRatio: '460/215', height: '100%' }}
+    >
       <img
         src={game.image_url}
         alt={game.name}
@@ -126,7 +135,9 @@ export function GameCard({ game, onUpdate, onDelete, draggable }: Props) {
         {/* Price + Rating */}
         <div className="flex-shrink-0 text-right flex flex-col items-end justify-center gap-1 pr-3" onClick={e => e.stopPropagation()}>
           {game.price && (
-            <div className="text-sm text-slate-300 font-mono">{game.price}</div>
+            game.steam_url
+              ? <a href={game.steam_url} target="_blank" rel="noopener noreferrer" className="text-sm text-slate-300 font-mono hover:text-[#4fd1c5] transition-colors" onClick={e => e.stopPropagation()}>{game.price}</a>
+              : <div className="text-sm text-slate-300 font-mono">{game.price}</div>
           )}
           {game.key_price && game.key_price_url && (
             <a

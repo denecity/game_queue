@@ -4,7 +4,7 @@ interface Env {
   DB: D1Database
 }
 
-const FETCH_TIMEOUT = 8000
+const FETCH_TIMEOUT = 10000
 const MAX_GAMES = 50
 
 async function fetchT(url: string, init?: RequestInit): Promise<Response> {
@@ -17,51 +17,66 @@ async function fetchT(url: string, init?: RequestInit): Promise<Response> {
   }
 }
 
+// Parse the public XML game list from steamcommunity.com/id/X/games/?tab=all&xml=1
+// No API key required.
+function parseGamesXml(xml: string): Array<{ appid: number; name: string; hoursForever: number }> {
+  const games: Array<{ appid: number; name: string; hoursForever: number }> = []
+  const gameBlocks = xml.match(/<game>([\s\S]*?)<\/game>/g) ?? []
+  for (const block of gameBlocks) {
+    const appidMatch = block.match(/<appID>(\d+)<\/appID>/)
+    const nameMatch = block.match(/<name><!\[CDATA\[(.*?)\]\]><\/name>/) ?? block.match(/<name>(.*?)<\/name>/)
+    const hoursMatch = block.match(/<hoursOnRecord>([\d,.]+)<\/hoursOnRecord>/)
+    if (!appidMatch || !nameMatch) continue
+    const hoursStr = hoursMatch?.[1]?.replace(',', '') ?? '0'
+    games.push({
+      appid: parseInt(appidMatch[1], 10),
+      name: nameMatch[1],
+      hoursForever: parseFloat(hoursStr) || 0,
+    })
+  }
+  return games
+}
+
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { profileUrl } = await request.json() as { profileUrl: string }
   if (!profileUrl) return Response.json({ error: 'Missing profileUrl' }, { status: 400 })
 
   try {
-    // Resolve Steam ID from profile URL
-    let steamId: string | null = null
+    // Build games XML URL — works for both /id/vanity/ and /profiles/steamid64/
+    // No API key required for public profiles.
+    let gamesXmlUrl: string
 
-    const idMatch = profileUrl.match(/\/profiles\/(\d+)/)
-    if (idMatch) {
-      steamId = idMatch[1]
+    const vanityMatch = profileUrl.match(/steamcommunity\.com\/id\/([^/?#]+)/)
+    const profileIdMatch = profileUrl.match(/steamcommunity\.com\/profiles\/(\d+)/)
+
+    if (vanityMatch) {
+      gamesXmlUrl = `https://steamcommunity.com/id/${vanityMatch[1]}/games/?tab=all&xml=1`
+    } else if (profileIdMatch) {
+      gamesXmlUrl = `https://steamcommunity.com/profiles/${profileIdMatch[1]}/games/?tab=all&xml=1`
     } else {
-      const vanityMatch = profileUrl.match(/\/id\/([^/]+)/)
-      if (vanityMatch) {
-        const res = await fetchT(
-          `https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?vanityurl=${vanityMatch[1]}`
-        )
-        if (res.ok) {
-          const data = await res.json() as { response: { steamid?: string; success: number } }
-          if (data.response.success === 1) steamId = data.response.steamid ?? null
-        }
-      }
+      return Response.json({
+        error: 'Invalid Steam profile URL. Use https://steamcommunity.com/id/USERNAME/ or .../profiles/STEAMID64/'
+      }, { status: 400 })
     }
 
-    if (!steamId) return Response.json({ error: 'Could not resolve Steam profile URL' }, { status: 400 })
+    const xmlRes = await fetchT(gamesXmlUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GameQueue/1.0)' },
+    })
 
-    // Fetch owned games via Steam Web API (no key needed for public profiles)
-    const libRes = await fetchT(
-      `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?steamid=${steamId}&include_appinfo=true&include_played_free_games=true&format=json`
-    )
-    if (!libRes.ok) {
-      return Response.json({ error: `Steam API error: ${libRes.status}` }, { status: 502 })
+    if (!xmlRes.ok) {
+      return Response.json({ error: `Steam returned ${xmlRes.status}. Make sure your profile and game library are public.` }, { status: 502 })
     }
 
-    const libData = await libRes.json() as {
-      response?: {
-        games?: Array<{ appid: number; name: string; playtime_forever: number; img_logo_url: string }>
-      }
+    const xml = await xmlRes.text()
+
+    // Check for error node
+    if (xml.includes('<error>') || !xml.includes('<games>')) {
+      return Response.json({ error: 'Could not load game library. Make sure your Steam profile and game details are set to Public.' }, { status: 400 })
     }
 
-    const games = libData.response?.games ?? []
-    // Sort by playtime descending, take top MAX_GAMES
-    const sorted = games
-      .filter(g => g.playtime_forever > 0)
-      .sort((a, b) => b.playtime_forever - a.playtime_forever)
+    const allGames = parseGamesXml(xml)
+    const sorted = allGames
+      .sort((a, b) => b.hoursForever - a.hoursForever)
       .slice(0, MAX_GAMES)
 
     let added = 0
@@ -76,17 +91,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const maxPos = await env.DB.prepare('SELECT MAX(queue_position) as mp FROM games').first() as { mp: number | null } | null
       const queue_position = (maxPos?.mp ?? 0) + 1000
       const id = crypto.randomUUID()
-      const imageUrl = `https://cdn.akamai.steamstatic.com/steam/apps/${g.appid}/header.jpg`
-      const steamUrl = `https://store.steampowered.com/app/${g.appid}/`
-      const hoursPlayed = Math.round(g.playtime_forever / 60 * 10) / 10
 
       await env.DB.prepare(`
         INSERT INTO games (id, steam_app_id, name, image_url, status, queue_position, tags, hours_played, date_added, is_custom, steam_url, date_completed)
         VALUES (?, ?, ?, ?, 'done', ?, '[]', ?, ?, 0, ?, ?)
       `).bind(
-        id, g.appid, g.name, imageUrl,
-        queue_position, hoursPlayed,
-        new Date().toISOString(), steamUrl,
+        id, g.appid, g.name,
+        `https://cdn.akamai.steamstatic.com/steam/apps/${g.appid}/header.jpg`,
+        queue_position, g.hoursForever,
+        new Date().toISOString(),
+        `https://store.steampowered.com/app/${g.appid}/`,
         new Date().toISOString()
       ).run()
 
@@ -94,7 +108,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       added++
     }
 
-    return Response.json({ added, skipped, total: games.length, games: results })
+    return Response.json({ added, skipped, total: allGames.length, games: results })
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 502 })
   }

@@ -4,35 +4,15 @@ interface Env {
   DB: D1Database
 }
 
-const MAX_IMPORT_ITEMS = 8
-const FETCH_TIMEOUT_MS = 8000
+const FETCH_TIMEOUT = 10000
 
-async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+async function fetchT(url: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+  const t = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
   try {
-    return await fetch(input, { ...init, signal: controller.signal })
+    return await fetch(url, { ...init, signal: controller.signal })
   } finally {
-    clearTimeout(timeout)
-  }
-}
-
-async function parseJsonOrThrow<T>(res: Response, source: string): Promise<T> {
-  const contentType = res.headers.get('content-type') || ''
-  const bodyText = await res.text()
-
-  if (!res.ok) {
-    throw new Error(`${source} HTTP ${res.status}`)
-  }
-
-  if (!contentType.includes('application/json')) {
-    throw new Error(`${source} returned non-JSON response`)
-  }
-
-  try {
-    return JSON.parse(bodyText) as T
-  } catch {
-    throw new Error(`${source} returned invalid JSON`)
+    clearTimeout(t)
   }
 }
 
@@ -41,70 +21,75 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!url) return Response.json({ error: 'Missing url' }, { status: 400 })
 
   try {
-    // Extract steam ID or vanity name from URL
-    const steamIdMatch = url.match(/wishlist\/profiles?\/(\d+)/)
-    const vanityMatch = url.match(/wishlist\/id\/([^/]+)/)
+    // Build wishlist data URL directly — supports both /id/vanity/ and /profiles/steamid64/
+    // No API key needed; Steam serves wishlistdata/ publicly for public wishlists
+    let wishlistDataUrl: string
 
-    let wishlistUrl: string
-    if (steamIdMatch) {
-      wishlistUrl = `https://store.steampowered.com/wishlist/profiles/${steamIdMatch[1]}/wishlistdata/`
-    } else if (vanityMatch) {
-      // Need to resolve vanity URL first — use public API
-      const vanityRes = await fetchWithTimeout(
-        `https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?vanityurl=${vanityMatch[1]}`
-      )
-      const vanityData = await parseJsonOrThrow<{ response: { steamid?: string; success: number } }>(
-        vanityRes,
-        'ResolveVanityURL'
-      )
-      if (vanityData.response.success !== 1 || !vanityData.response.steamid) {
-        return Response.json({ error: 'Could not resolve Steam vanity URL' }, { status: 400 })
-      }
-      wishlistUrl = `https://store.steampowered.com/wishlist/profiles/${vanityData.response.steamid}/wishlistdata/`
+    const vanityMatch = url.match(/wishlist\/id\/([^/?#]+)/)
+    const profileMatch = url.match(/wishlist\/profiles?\/(\d+)/)
+
+    if (vanityMatch) {
+      wishlistDataUrl = `https://store.steampowered.com/wishlist/id/${vanityMatch[1]}/wishlistdata/`
+    } else if (profileMatch) {
+      wishlistDataUrl = `https://store.steampowered.com/wishlist/profiles/${profileMatch[1]}/wishlistdata/`
     } else {
-      return Response.json({ error: 'Invalid Steam wishlist URL' }, { status: 400 })
+      return Response.json({ error: 'Invalid Steam wishlist URL. Use https://store.steampowered.com/wishlist/id/USERNAME/ or .../profiles/STEAMID64/' }, { status: 400 })
     }
 
-    const wishRes = await fetchWithTimeout(wishlistUrl, {
+    const wishRes = await fetchT(wishlistDataUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; GameQueue/1.0)',
         'Cookie': 'birthtime=0; mature_content=1',
       },
     })
-    const wishData = await parseJsonOrThrow<Record<string, { name: string; priority: number }>>(
-      wishRes,
-      'Wishlist data'
-    )
+
+    if (!wishRes.ok) {
+      return Response.json({ error: `Steam returned ${wishRes.status}. Make sure your wishlist is public.` }, { status: 502 })
+    }
+
+    const contentType = wishRes.headers.get('content-type') ?? ''
+    if (!contentType.includes('application/json')) {
+      return Response.json({ error: 'Steam returned non-JSON. The wishlist may be private or the URL is wrong.' }, { status: 502 })
+    }
+
+    const wishData = await wishRes.json() as Record<string, { name: string; priority: number }>
     const appIds = Object.keys(wishData)
 
+    if (appIds.length === 0) {
+      return Response.json({ added: 0, games: [], scanned: 0, totalWishlistItems: 0 })
+    }
+
     let added = 0
+    let skipped = 0
     const games: Array<{ id: string; name: string }> = []
     const errors: string[] = []
+    const MAX_IMPORT = 50
 
-    for (const appId of appIds.slice(0, MAX_IMPORT_ITEMS)) {
-      // Check if already in DB
+    for (const appId of appIds.slice(0, MAX_IMPORT)) {
       const existing = await env.DB.prepare('SELECT id FROM games WHERE steam_app_id = ?')
         .bind(parseInt(appId, 10)).first()
-      if (existing) continue
+      if (existing) { skipped++; continue }
 
       try {
-        const detailRes = await fetchWithTimeout(
+        const detailRes = await fetchT(
           `https://store.steampowered.com/api/appdetails?appids=${appId}&cc=CH&l=english`,
           { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GameQueue/1.0)', 'Cookie': 'birthtime=0; mature_content=1' } }
         )
-        const detailData = await parseJsonOrThrow<Record<string, { success: boolean; data?: { name: string; is_free: boolean; price_overview?: { final_formatted: string }; genres?: Array<{ description: string }> } }>>(
-          detailRes,
-          `App ${appId} details`
-        )
+        if (!detailRes.ok) { errors.push(`${appId}: HTTP ${detailRes.status}`); continue }
+
+        const detailData = await detailRes.json() as Record<string, {
+          success: boolean
+          data?: { name: string; is_free: boolean; price_overview?: { final_formatted: string }; genres?: Array<{ description: string }> }
+        }>
         const appEntry = detailData[appId]
-        if (!appEntry?.success || !appEntry.data) continue
+        if (!appEntry?.success || !appEntry.data) { errors.push(`${appId}: no data`); continue }
 
         const d = appEntry.data
         const id = crypto.randomUUID()
-        const maxPosResult = await env.DB.prepare('SELECT MAX(queue_position) as mp FROM games').first() as { mp: number | null } | null
-        const queue_position = ((maxPosResult?.mp ?? 0) + 1000)
-
+        const maxPos = await env.DB.prepare('SELECT MAX(queue_position) as mp FROM games').first() as { mp: number | null } | null
+        const queue_position = (maxPos?.mp ?? 0) + 1000
         const tags = d.genres?.map(g => g.description) ?? []
+
         await env.DB.prepare(`
           INSERT INTO games (id, steam_app_id, name, image_url, price, status, queue_position, tags, hours_played, date_added, is_custom, steam_url)
           VALUES (?, ?, ?, ?, ?, 'none', ?, ?, 0, ?, 0, ?)
@@ -122,15 +107,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       } catch (err) {
         errors.push(`${appId}: ${err instanceof Error ? err.message : String(err)}`)
       }
+
+      // Be polite to Steam API
+      await new Promise(r => setTimeout(r, 300))
     }
 
     return Response.json({
-      added,
-      games,
-      scanned: Math.min(appIds.length, MAX_IMPORT_ITEMS),
+      added, skipped,
+      scanned: Math.min(appIds.length, MAX_IMPORT),
       totalWishlistItems: appIds.length,
-      truncated: appIds.length > MAX_IMPORT_ITEMS,
+      truncated: appIds.length > MAX_IMPORT,
       errors: errors.slice(0, 5),
+      games,
     })
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 502 })
