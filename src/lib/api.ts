@@ -74,4 +74,9 @@ export const api = {
       return request('/api/keyforsteam/refresh', { method: 'POST' })
     },
   },
+  library: {
+    import(profileUrl: string): Promise<{ added: number; skipped: number; total: number; games: { id: string; name: string }[] }> {
+      return request('/api/steam/import-library', { method: 'POST', body: JSON.stringify({ profileUrl }) })
+    },
+  },
 }

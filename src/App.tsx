@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import { useGames } from './hooks/useGames'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { SearchBar } from './components/SearchBar'
@@ -12,10 +12,16 @@ import { ToastContainer } from './components/Toast'
 import type { SteamSearchResult, TabName, Game } from './lib/types'
 import { api } from './lib/api'
 
+const KEY_PRICE_REFRESH_KEY = 'gq_last_key_refresh'
+const KEY_PRICE_REFRESH_INTERVAL = 6 * 60 * 60 * 1000 // 6 hours
+
 export default function App() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [activeTab, setActiveTab] = useState<TabName>('queue')
+  // null = modal closed, 'custom' = custom game, SteamSearchResult = steam game
   const [addModalPrefill, setAddModalPrefill] = useState<SteamSearchResult | null | 'custom'>(null)
+  // Extra games queued to bulk-add alongside the modal's current prefill
+  const [bulkQueue, setBulkQueue] = useState<SteamSearchResult[]>([])
   const [showSettings, setShowSettings] = useState(false)
 
   const {
@@ -36,15 +42,30 @@ export default function App() {
     refetch,
   } = useGames()
 
+  // Auto-refresh key prices once per 6h on load
+  useEffect(() => {
+    const last = parseInt(localStorage.getItem(KEY_PRICE_REFRESH_KEY) ?? '0', 10)
+    if (Date.now() - last > KEY_PRICE_REFRESH_INTERVAL) {
+      api.keyforsteam.refresh().then(() => {
+        localStorage.setItem(KEY_PRICE_REFRESH_KEY, String(Date.now()))
+        refetch()
+      }).catch(() => { /* silent — non-critical */ })
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const focusSearch = useCallback(() => {
     searchInputRef.current?.focus()
     searchInputRef.current?.select()
   }, [])
 
   const handleEscape = useCallback(() => {
-    setAddModalPrefill(null)
-    setShowSettings(false)
-  }, [])
+    if (addModalPrefill !== null) {
+      setAddModalPrefill(null)
+      setBulkQueue([])
+    } else {
+      setShowSettings(false)
+    }
+  }, [addModalPrefill])
 
   useKeyboardShortcuts({
     onFocusSearch: focusSearch,
@@ -53,7 +74,12 @@ export default function App() {
   })
 
   async function handleSelectSearchResult(result: SteamSearchResult) {
-    // Fetch full details from Steam
+    // If modal is already open, queue this game instead of replacing
+    if (addModalPrefill !== null && addModalPrefill !== 'custom') {
+      setBulkQueue(prev => prev.some(r => r.appid === result.appid) ? prev : [...prev, result])
+      return
+    }
+    // Fetch full details
     try {
       const full = await api.steam.app(result.appid)
       setAddModalPrefill({ ...result, ...full })
@@ -65,12 +91,37 @@ export default function App() {
   async function handleAddGame(partial: Partial<Game>) {
     const saved = await addGame(partial)
     if (saved) {
-      // Switch to correct tab
       if (saved.status === 'none') setActiveTab('wishlist')
       else if (saved.status === 'done') setActiveTab('archive')
       else setActiveTab('queue')
     }
+    // If there are more in the bulk queue, pop the next one
+    if (bulkQueue.length > 0) {
+      const [next, ...rest] = bulkQueue
+      setBulkQueue(rest)
+      try {
+        const full = await api.steam.app(next.appid)
+        setAddModalPrefill({ ...next, ...full })
+      } catch {
+        setAddModalPrefill(next)
+      }
+    } else {
+      setAddModalPrefill(null)
+    }
+  }
+
+  async function handleAddAll(partials: Partial<Game>[]) {
+    for (const partial of partials) {
+      await addGame(partial)
+    }
     setAddModalPrefill(null)
+    setBulkQueue([])
+    refetch()
+  }
+
+  function handleCloseModal() {
+    setAddModalPrefill(null)
+    setBulkQueue([])
   }
 
   const currentGames = activeTab === 'queue' ? queueGames
@@ -79,7 +130,6 @@ export default function App() {
 
   const isManualSort = sort === 'manual'
   const isDraggable = isManualSort && activeTab !== 'archive'
-
   const totalEmpty = queueGames.length === 0 && wishlistGames.length === 0 && archiveGames.length === 0
 
   return (
@@ -128,18 +178,14 @@ export default function App() {
           />
         </div>
 
-        {/* Non-manual sort notice */}
         {!isManualSort && activeTab !== 'archive' && (
           <div className="text-xs text-slate-500 mb-2 flex items-center gap-1">
             <span>⚠</span> Manual reordering disabled while sorted. Switch to "Manual Order" to drag.
           </div>
         )}
 
-        {/* Content */}
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-slate-500">
-            Loading…
-          </div>
+          <div className="flex items-center justify-center py-20 text-slate-500">Loading…</div>
         ) : totalEmpty ? (
           <EmptyState
             onImportWishlist={() => setShowSettings(true)}
@@ -147,7 +193,7 @@ export default function App() {
           />
         ) : currentGames.length === 0 ? (
           <div className="text-center py-12 text-slate-500">
-            {activeTab === 'queue' && 'No games in your queue. Add some from your wishlist!'}
+            {activeTab === 'queue' && 'No games in your queue.'}
             {activeTab === 'wishlist' && 'Your wishlist is empty. Search for games above.'}
             {activeTab === 'archive' && "You haven't completed any games yet."}
           </div>
@@ -162,19 +208,23 @@ export default function App() {
         )}
       </div>
 
-      {/* Modals */}
+      {/* Add game modal */}
       {addModalPrefill !== null && (
         <AddGameModal
           prefill={addModalPrefill === 'custom' ? null : addModalPrefill}
+          activeTab={activeTab}
+          pendingQueue={bulkQueue}
           onConfirm={handleAddGame}
-          onClose={() => setAddModalPrefill(null)}
+          onConfirmAll={handleAddAll}
+          onRemoveFromQueue={appid => setBulkQueue(prev => prev.filter(r => r.appid !== appid))}
+          onClose={handleCloseModal}
         />
       )}
 
       {showSettings && (
         <Settings
           onClose={() => setShowSettings(false)}
-          onImportWishlist={() => { setShowSettings(false); refetch() }}
+          onDataChanged={() => { setShowSettings(false); refetch() }}
           games={games}
         />
       )}

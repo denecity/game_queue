@@ -4,9 +4,7 @@ import { CSS } from '@dnd-kit/utilities'
 import type { Game } from '../lib/types'
 import { StatusBadge } from './StatusBadge'
 import { RatingSelector } from './RatingSelector'
-import {
-  formatPlayerCount, formatRelativeTime, formatDate, isKeyPriceStale
-} from '../lib/utils'
+import { formatPlayerCount, formatRelativeTime, formatDate, isKeyPriceStale } from '../lib/utils'
 
 interface Props {
   game: Game
@@ -19,18 +17,20 @@ function GameImage({ game }: { game: Game }) {
   const [errored, setErrored] = useState(false)
   if (!game.image_url || errored) {
     return (
-      <div className="w-24 h-11 rounded bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center flex-shrink-0">
+      <div className="w-28 self-stretch rounded bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center flex-shrink-0">
         <span className="text-lg">🎮</span>
       </div>
     )
   }
   return (
-    <img
-      src={game.image_url}
-      alt={game.name}
-      className="w-24 h-11 rounded object-cover flex-shrink-0"
-      onError={() => setErrored(true)}
-    />
+    <div className="w-28 self-stretch flex-shrink-0 overflow-hidden rounded">
+      <img
+        src={game.image_url}
+        alt={game.name}
+        className="w-full h-full object-cover"
+        onError={() => setErrored(true)}
+      />
+    </div>
   )
 }
 
@@ -76,25 +76,40 @@ export function GameCard({ game, onUpdate, onDelete, draggable }: Props) {
     >
       {/* Collapsed row */}
       <div
-        className="flex items-center gap-3 p-3 cursor-pointer select-none"
+        className="flex items-stretch gap-0 cursor-pointer select-none overflow-hidden rounded-lg"
+        style={{ minHeight: '64px' }}
         onClick={() => setExpanded(e => !e)}
       >
         {/* Drag handle */}
         <div
           {...(draggable ? { ...attributes, ...listeners } : {})}
-          className={`flex-shrink-0 text-slate-600 hover:text-slate-400 transition-colors px-1
-            ${draggable ? 'cursor-grab active:cursor-grabbing' : 'opacity-0 pointer-events-none'}`}
+          className={`flex-shrink-0 flex items-center text-slate-600 hover:text-slate-400 transition-colors px-2
+            ${draggable ? 'cursor-grab active:cursor-grabbing' : 'opacity-0 pointer-events-none w-0'}`}
           onClick={e => e.stopPropagation()}
         >
           ⠿
         </div>
 
-        {/* Image */}
+        {/* Image — fills full height */}
         <GameImage game={game} />
 
         {/* Info */}
-        <div className="flex-1 min-w-0">
-          <div className="font-semibold text-slate-100 truncate text-sm">{game.name}</div>
+        <div className="flex-1 min-w-0 flex flex-col justify-center px-3 py-2">
+          <div className="flex items-center gap-2">
+            <div className="font-semibold text-slate-100 truncate text-sm">{game.name}</div>
+            {game.steam_url && (
+              <a
+                href={game.steam_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-slate-500 hover:text-[#4fd1c5] transition-colors flex-shrink-0 text-xs"
+                title="Open on Steam"
+                onClick={e => e.stopPropagation()}
+              >
+                ↗
+              </a>
+            )}
+          </div>
           <div className="text-xs text-slate-500 truncate mt-0.5">
             {game.tags.slice(0, 3).join(', ') || (game.is_custom ? 'Custom' : '')}
           </div>
@@ -109,7 +124,7 @@ export function GameCard({ game, onUpdate, onDelete, draggable }: Props) {
         </div>
 
         {/* Price + Rating */}
-        <div className="flex-shrink-0 text-right flex flex-col items-end gap-1" onClick={e => e.stopPropagation()}>
+        <div className="flex-shrink-0 text-right flex flex-col items-end justify-center gap-1 pr-3" onClick={e => e.stopPropagation()}>
           {game.price && (
             <div className="text-sm text-slate-300 font-mono">{game.price}</div>
           )}
@@ -135,96 +150,28 @@ export function GameCard({ game, onUpdate, onDelete, draggable }: Props) {
       {/* Expanded section */}
       {expanded && (
         <div className="border-t border-[#2a2d35] px-4 py-3 animate-fade-in">
-          <div className="flex gap-4">
-            {/* Large image */}
-            {game.image_url && (
-              <img
-                src={game.image_url}
-                alt={game.name}
-                className="w-40 h-[74px] rounded object-cover flex-shrink-0"
-                onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-              />
-            )}
-            <div className="flex-1 min-w-0">
-              <div className="font-bold text-slate-100 text-base">{game.name}</div>
-              <div className="text-xs text-slate-400 mt-0.5 flex flex-wrap gap-1">
-                {game.tags.map(t => (
-                  <span key={t} className="bg-[#20242c] border border-[#2a2d35] px-2 py-0.5 rounded-full">{t}</span>
-                ))}
-              </div>
-              <div className="flex items-center gap-4 mt-2 text-sm">
-                <div className="flex flex-col">
-                  {game.price && <span className="font-mono text-slate-300">{game.price}</span>}
-                  {game.key_price && game.key_price_url && (
-                    <a
-                      href={game.key_price_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-[#4fd1c5] hover:underline"
-                    >
-                      🔑 {game.key_price} {keyStale && <span title="Price may be outdated">⏳</span>}
-                    </a>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-4 mt-1 text-xs text-slate-400">
-                {game.player_count != null && (
-                  <span>~{formatPlayerCount(game.player_count)} all-time{game.player_count_recent ? ` · ~${formatPlayerCount(game.player_count_recent)} recently` : ''}</span>
-                )}
-                {game.key_price_updated && (
-                  <span>Key updated {formatRelativeTime(game.key_price_updated)}</span>
-                )}
-              </div>
-            </div>
+          {/* Tags + player counts + dates */}
+          <div className="flex flex-wrap gap-1 mb-2">
+            {game.tags.map(t => (
+              <span key={t} className="bg-[#20242c] border border-[#2a2d35] text-xs px-2 py-0.5 rounded-full text-slate-400">{t}</span>
+            ))}
           </div>
 
-          {/* Hours + links */}
-          <div className="flex items-center gap-4 mt-3 text-sm">
-            <label className="flex items-center gap-2 text-slate-400">
-              Hours played:
-              <input
-                type="number"
-                min={0}
-                step={0.5}
-                defaultValue={game.hours_played}
-                onBlur={e => onUpdate(game.id, { hours_played: parseFloat(e.target.value) || 0 })}
-                className="bg-[#20242c] border border-[#2a2d35] rounded px-2 py-0.5 w-20 text-slate-200 focus:outline-none focus:border-[#4fd1c5]"
-                onClick={e => e.stopPropagation()}
-              />
-              hrs
-            </label>
-            {game.steam_url && (
-              <a
-                href={game.steam_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[#4fd1c5] hover:text-[#38b2ac] text-xs"
-              >
-                🔗 Steam
-              </a>
+          <div className="flex flex-wrap gap-4 text-xs text-slate-500 mb-3">
+            {game.player_count != null && (
+              <span>♟ ~{formatPlayerCount(game.player_count)} all-time{game.player_count_recent ? ` · ~${formatPlayerCount(game.player_count_recent)} recently` : ''}</span>
             )}
-            {game.key_price_url && (
-              <a
-                href={game.key_price_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[#4fd1c5] hover:text-[#38b2ac] text-xs"
-              >
-                🔑 Keys
-              </a>
+            {game.key_price_updated && (
+              <span>Key updated {formatRelativeTime(game.key_price_updated)}{keyStale ? ' ⏳' : ''}</span>
             )}
-          </div>
-
-          {/* Dates */}
-          <div className="flex gap-6 mt-2 text-xs text-slate-500">
-            <span title={game.date_added}>Added {formatRelativeTime(game.date_added)} ({formatDate(game.date_added)})</span>
+            <span title={game.date_added}>Added {formatDate(game.date_added)}</span>
             {game.date_completed && (
-              <span title={game.date_completed}>Completed {formatRelativeTime(game.date_completed)} ({formatDate(game.date_completed)})</span>
+              <span title={game.date_completed}>Completed {formatDate(game.date_completed)}</span>
             )}
           </div>
 
           {/* Notes */}
-          <div className="mt-3">
+          <div className="mb-3">
             <label className="block text-xs text-slate-400 mb-1">Notes</label>
             <textarea
               defaultValue={game.notes ?? ''}
@@ -236,7 +183,7 @@ export function GameCard({ game, onUpdate, onDelete, draggable }: Props) {
           </div>
 
           {/* Actions */}
-          <div className="flex justify-between items-center mt-3">
+          <div className="flex justify-between items-center">
             {confirmDelete ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-400">Are you sure?</span>
@@ -271,7 +218,7 @@ export function GameCard({ game, onUpdate, onDelete, draggable }: Props) {
         </div>
       )}
 
-      {/* Rating prompt modal (when archiving without rating) */}
+      {/* Rating prompt when archiving unrated game */}
       {pendingStatus && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"

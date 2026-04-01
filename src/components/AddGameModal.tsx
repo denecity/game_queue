@@ -1,24 +1,37 @@
 import { useState } from 'react'
-import type { Game, GameStatus, SteamSearchResult } from '../lib/types'
+import type { Game, GameStatus, SteamSearchResult, TabName } from '../lib/types'
 
 interface Props {
   prefill: SteamSearchResult | null
+  activeTab: TabName
+  pendingQueue?: SteamSearchResult[]          // multiple games queued for bulk-add
   onConfirm: (game: Partial<Game>) => void
+  onConfirmAll?: (games: Partial<Game>[]) => void
+  onRemoveFromQueue?: (appid: number) => void
   onClose: () => void
 }
 
-export function AddGameModal({ prefill, onConfirm, onClose }: Props) {
+function defaultStatusForTab(tab: TabName): GameStatus {
+  if (tab === 'wishlist') return 'none'
+  if (tab === 'archive') return 'done'
+  return 'bought'
+}
+
+export function AddGameModal({
+  prefill, activeTab, pendingQueue = [], onConfirm, onConfirmAll, onRemoveFromQueue, onClose
+}: Props) {
   const [name, setName] = useState(prefill?.name ?? '')
   const [price, setPrice] = useState(prefill?.price ?? '')
   const [imageUrl, setImageUrl] = useState(prefill?.image_url ?? '')
   const [tags, setTags] = useState((prefill?.tags ?? []).join(', '))
-  const [status, setStatus] = useState<GameStatus>('none')
+  const [status, setStatus] = useState<GameStatus>(defaultStatusForTab(activeTab))
   const [notes, setNotes] = useState('')
+
+  const hasBulk = pendingQueue.length > 0
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) return
-
     onConfirm({
       name: name.trim(),
       price: price.trim() || null,
@@ -32,13 +45,28 @@ export function AddGameModal({ prefill, onConfirm, onClose }: Props) {
     })
   }
 
+  function addAll() {
+    if (!onConfirmAll) return
+    const all = [prefill, ...pendingQueue].filter(Boolean) as SteamSearchResult[]
+    onConfirmAll(all.map(r => ({
+      name: r.name,
+      price: r.price || null,
+      image_url: r.image_url || null,
+      tags: r.tags ?? [],
+      status,
+      steam_app_id: r.appid,
+      is_custom: false,
+      steam_url: `https://store.steampowered.com/app/${r.appid}/`,
+    })))
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onClick={onClose}
     >
       <div
-        className="card p-6 w-full max-w-md shadow-2xl animate-fade-in"
+        className="card p-6 w-full max-w-md shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-start justify-between mb-4">
@@ -47,6 +75,35 @@ export function AddGameModal({ prefill, onConfirm, onClose }: Props) {
           </h2>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-xl leading-none">&times;</button>
         </div>
+
+        {/* Bulk queue preview */}
+        {hasBulk && (
+          <div className="mb-4 border border-[#2a2d35] rounded-lg overflow-hidden">
+            <div className="px-3 py-2 bg-[#20242c] text-xs text-slate-400 flex justify-between items-center">
+              <span>{pendingQueue.length + (prefill ? 1 : 0)} games queued</span>
+              <button onClick={addAll} className="text-[#4fd1c5] hover:text-[#38b2ac] font-medium">Add all →</button>
+            </div>
+            <div className="max-h-36 overflow-y-auto">
+              {prefill && (
+                <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[#2a2d35]">
+                  {prefill.image_url && <img src={prefill.image_url} alt="" className="w-10 h-[18px] rounded object-cover" />}
+                  <span className="text-xs text-slate-200 flex-1 truncate">{prefill.name}</span>
+                  <span className="text-xs text-slate-500 font-mono">{prefill.price}</span>
+                </div>
+              )}
+              {pendingQueue.map(r => (
+                <div key={r.appid} className="flex items-center gap-2 px-3 py-1.5 border-b border-[#2a2d35] last:border-0">
+                  {r.image_url && <img src={r.image_url} alt="" className="w-10 h-[18px] rounded object-cover" />}
+                  <span className="text-xs text-slate-200 flex-1 truncate">{r.name}</span>
+                  <span className="text-xs text-slate-500 font-mono mr-2">{r.price}</span>
+                  {onRemoveFromQueue && (
+                    <button onClick={() => onRemoveFromQueue(r.appid)} className="text-slate-600 hover:text-red-400 text-xs">✕</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Preview image */}
         {(prefill?.image_url || imageUrl) && (
@@ -80,7 +137,7 @@ export function AddGameModal({ prefill, onConfirm, onClose }: Props) {
               />
             </div>
             <div className="flex-1">
-              <label className="block text-xs text-slate-400 mb-1">Initial Status</label>
+              <label className="block text-xs text-slate-400 mb-1">Status</label>
               <select
                 value={status}
                 onChange={e => setStatus(e.target.value as GameStatus)}
@@ -90,6 +147,7 @@ export function AddGameModal({ prefill, onConfirm, onClose }: Props) {
                 <option value="bought">Bought</option>
                 <option value="installed">Installed</option>
                 <option value="playing">Playing</option>
+                <option value="done">Done (Archive)</option>
               </select>
             </div>
           </div>
@@ -128,7 +186,7 @@ export function AddGameModal({ prefill, onConfirm, onClose }: Props) {
 
           <div className="flex gap-2 pt-1">
             <button type="submit" className="btn-primary flex-1">
-              Add to {status === 'none' ? 'Wishlist' : 'Queue'}
+              Add to {status === 'none' ? 'Wishlist' : status === 'done' ? 'Archive' : 'Queue'}
             </button>
             <button type="button" onClick={onClose} className="btn-ghost flex-1 border border-[#2a2d35]">
               Cancel
