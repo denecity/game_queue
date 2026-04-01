@@ -1,4 +1,4 @@
-export const onRequest: PagesFunction = async ({ request }) => {
+export const onRequest: PagesFunction = async ({ request, env }) => {
   const url = new URL(request.url)
 
   // Skip API routes - let them be handled by their own functions
@@ -7,5 +7,8 @@ export const onRequest: PagesFunction = async ({ request }) => {
   }
 
   // For all other routes, serve index.html for client-side routing
-  return fetch(`${new URL(request.url).origin}/index.html`)
+  const assetRequest = new Request(new URL('/index.html', url), {
+    method: 'GET',
+  })
+  return env.ASSETS.fetch(assetRequest)
 }
