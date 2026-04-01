@@ -1,8 +1,17 @@
 import type { Game, SteamSearchResult, ReorderPayload } from './types'
 
+function getSteamApiKey(): string {
+  return localStorage.getItem('gq_steam_api_key') ?? ''
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const apiKey = getSteamApiKey()
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey ? { 'x-steam-api-key': apiKey } : {}),
+      ...init?.headers,
+    },
     ...init,
   })
   if (!res.ok) {

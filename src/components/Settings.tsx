@@ -33,6 +33,7 @@ function saveSources(sources: SyncSource[]) {
 }
 
 export function Settings({ onClose, onDataChanged, games, cardHeight, onCardHeightChange }: Props) {
+  const [steamApiKey, setSteamApiKey] = useState(() => localStorage.getItem('gq_steam_api_key') ?? '')
   const [sources, setSources] = useState<SyncSource[]>(loadSources)
   const [newUrl, setNewUrl] = useState('')
   const [newType, setNewType] = useState<'wishlist' | 'library'>('wishlist')
@@ -127,6 +128,33 @@ export function Settings({ onClose, onDataChanged, games, cardHeight, onCardHeig
           <h2 className="text-lg font-semibold text-slate-100">Settings</h2>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-xl leading-none">&times;</button>
         </div>
+
+        {/* Steam API Key */}
+        <section className="mb-6">
+          <h3 className="text-sm font-semibold text-slate-300 mb-1">Steam API Key</h3>
+          <p className="text-xs text-slate-500 mb-2">
+            Required for wishlist and library sync.{' '}
+            <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer" className="text-[#4fd1c5] hover:underline">
+              Get a free key here ↗
+            </a>
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={steamApiKey}
+              onChange={e => setSteamApiKey(e.target.value)}
+              placeholder="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+              className="flex-1 bg-[#20242c] border border-[#2a2d35] rounded px-3 py-2 text-sm text-slate-200 font-mono focus:outline-none focus:border-[#4fd1c5]"
+            />
+            <button
+              onClick={() => { localStorage.setItem('gq_steam_api_key', steamApiKey); }}
+              className="btn-primary text-sm px-4"
+            >
+              Save
+            </button>
+          </div>
+          {steamApiKey && <p className="text-xs text-[#4fd1c5] mt-1">✓ Key saved</p>}
+        </section>
 
         {/* Sync sources */}
         <section className="mb-6">
