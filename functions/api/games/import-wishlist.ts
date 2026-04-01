@@ -4,6 +4,27 @@ interface Env {
   DB: D1Database
 }
 
+const MAX_IMPORT_ITEMS = 25
+
+async function parseJsonOrThrow<T>(res: Response, source: string): Promise<T> {
+  const contentType = res.headers.get('content-type') || ''
+  const bodyText = await res.text()
+
+  if (!res.ok) {
+    throw new Error(`${source} HTTP ${res.status}`)
+  }
+
+  if (!contentType.includes('application/json')) {
+    throw new Error(`${source} returned non-JSON response`)
+  }
+
+  try {
+    return JSON.parse(bodyText) as T
+  } catch {
+    throw new Error(`${source} returned invalid JSON`)
+  }
+}
+
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { url } = await request.json() as { url: string }
   if (!url) return Response.json({ error: 'Missing url' }, { status: 400 })
@@ -21,7 +42,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const vanityRes = await fetch(
         `https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?vanityurl=${vanityMatch[1]}`
       )
-      const vanityData = await vanityRes.json() as { response: { steamid?: string; success: number } }
+      const vanityData = await parseJsonOrThrow<{ response: { steamid?: string; success: number } }>(
+        vanityRes,
+        'ResolveVanityURL'
+      )
       if (vanityData.response.success !== 1 || !vanityData.response.steamid) {
         return Response.json({ error: 'Could not resolve Steam vanity URL' }, { status: 400 })
       }
@@ -36,15 +60,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         'Cookie': 'birthtime=0; mature_content=1',
       },
     })
-    if (!wishRes.ok) throw new Error(`Wishlist fetch failed: ${wishRes.status}`)
-
-    const wishData = await wishRes.json() as Record<string, { name: string; priority: number }>
+    const wishData = await parseJsonOrThrow<Record<string, { name: string; priority: number }>>(
+      wishRes,
+      'Wishlist data'
+    )
     const appIds = Object.keys(wishData)
 
     let added = 0
-    const games = []
+    const games: Array<{ id: string; name: string }> = []
+    const errors: string[] = []
 
-    for (const appId of appIds.slice(0, 100)) {
+    for (const appId of appIds.slice(0, MAX_IMPORT_ITEMS)) {
       // Check if already in DB
       const existing = await env.DB.prepare('SELECT id FROM games WHERE steam_app_id = ?')
         .bind(parseInt(appId, 10)).first()
@@ -55,8 +81,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           `https://store.steampowered.com/api/appdetails?appids=${appId}&cc=CH&l=english`,
           { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GameQueue/1.0)', 'Cookie': 'birthtime=0; mature_content=1' } }
         )
-        if (!detailRes.ok) continue
-        const detailData = await detailRes.json() as Record<string, { success: boolean; data?: { name: string; is_free: boolean; price_overview?: { final_formatted: string }; genres?: Array<{ description: string }> } }>
+        const detailData = await parseJsonOrThrow<Record<string, { success: boolean; data?: { name: string; is_free: boolean; price_overview?: { final_formatted: string }; genres?: Array<{ description: string }> } }>>(
+          detailRes,
+          `App ${appId} details`
+        )
         const appEntry = detailData[appId]
         if (!appEntry?.success || !appEntry.data) continue
 
@@ -80,14 +108,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
         games.push({ id, name: d.name })
         added++
-
-        await new Promise(r => setTimeout(r, 500))
-      } catch {
-        // skip on error
+      } catch (err) {
+        errors.push(`${appId}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
 
-    return Response.json({ added, games })
+    return Response.json({
+      added,
+      games,
+      scanned: Math.min(appIds.length, MAX_IMPORT_ITEMS),
+      totalWishlistItems: appIds.length,
+      truncated: appIds.length > MAX_IMPORT_ITEMS,
+      errors: errors.slice(0, 5),
+    })
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 502 })
   }
