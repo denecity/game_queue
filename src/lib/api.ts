@@ -9,7 +9,27 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     const text = await res.text().catch(() => res.statusText)
     throw new Error(text || `HTTP ${res.status}`)
   }
-  return res.json() as Promise<T>
+
+  // Some endpoints (e.g. DELETE) return 204 No Content.
+  if (res.status === 204) {
+    return undefined as T
+  }
+
+  const contentType = res.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    return res.json() as Promise<T>
+  }
+
+  const text = await res.text()
+  if (!text) {
+    return undefined as T
+  }
+
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    throw new Error(text)
+  }
 }
 
 // Games
