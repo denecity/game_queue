@@ -1,6 +1,6 @@
 # GameQueue
 
-Personal game backlog manager. Built with React + Vite + TypeScript + Tailwind, hosted on Cloudflare Pages with D1 (SQLite).
+Personal games backlog manager. Built with React + Vite + TypeScript + Tailwind, hosted on Cloudflare Pages with D1 (SQLite).
 
 ## Local Development
 
