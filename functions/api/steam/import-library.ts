@@ -2,6 +2,7 @@ import type { D1Database } from '@cloudflare/workers-types'
 
 interface Env {
   DB: D1Database
+  STEAM_API_KEY: string
 }
 
 const FETCH_TIMEOUT = 10000
@@ -30,9 +31,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { profileUrl } = await request.json() as { profileUrl: string }
   if (!profileUrl) return Response.json({ error: 'Missing profileUrl' }, { status: 400 })
 
-  const apiKey = request.headers.get('x-steam-api-key') ?? ''
+  const apiKey = env.STEAM_API_KEY ?? ''
   if (!apiKey) {
-    return Response.json({ error: 'Steam API key required. Add your key in Settings → Steam API Key.' }, { status: 400 })
+    return Response.json({ error: 'STEAM_API_KEY environment variable not set. Add it in Cloudflare Pages → Settings → Environment Variables.' }, { status: 500 })
   }
 
   try {
