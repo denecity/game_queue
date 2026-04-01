@@ -6,7 +6,11 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     ...init,
   })
   if (!res.ok) {
+    const contentType = res.headers.get('content-type') || ''
     const text = await res.text().catch(() => res.statusText)
+    if (contentType.includes('text/html')) {
+      throw new Error(`Request failed (HTTP ${res.status}). Please try again.`)
+    }
     throw new Error(text || `HTTP ${res.status}`)
   }
 

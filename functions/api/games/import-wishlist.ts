@@ -4,7 +4,18 @@ interface Env {
   DB: D1Database
 }
 
-const MAX_IMPORT_ITEMS = 25
+const MAX_IMPORT_ITEMS = 8
+const FETCH_TIMEOUT_MS = 8000
+
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
 
 async function parseJsonOrThrow<T>(res: Response, source: string): Promise<T> {
   const contentType = res.headers.get('content-type') || ''
@@ -39,7 +50,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       wishlistUrl = `https://store.steampowered.com/wishlist/profiles/${steamIdMatch[1]}/wishlistdata/`
     } else if (vanityMatch) {
       // Need to resolve vanity URL first — use public API
-      const vanityRes = await fetch(
+      const vanityRes = await fetchWithTimeout(
         `https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?vanityurl=${vanityMatch[1]}`
       )
       const vanityData = await parseJsonOrThrow<{ response: { steamid?: string; success: number } }>(
@@ -54,7 +65,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return Response.json({ error: 'Invalid Steam wishlist URL' }, { status: 400 })
     }
 
-    const wishRes = await fetch(wishlistUrl, {
+    const wishRes = await fetchWithTimeout(wishlistUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; GameQueue/1.0)',
         'Cookie': 'birthtime=0; mature_content=1',
@@ -77,7 +88,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if (existing) continue
 
       try {
-        const detailRes = await fetch(
+        const detailRes = await fetchWithTimeout(
           `https://store.steampowered.com/api/appdetails?appids=${appId}&cc=CH&l=english`,
           { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GameQueue/1.0)', 'Cookie': 'birthtime=0; mature_content=1' } }
         )
