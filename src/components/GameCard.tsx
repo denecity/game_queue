@@ -50,7 +50,7 @@ export function GameCard({ game, onUpdate, onDelete, draggable }: Props) {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.4 : 1,
-    zIndex: isDragging ? 50 : 'auto',
+    zIndex: isDragging ? 50 : undefined,
   }
 
   const handleStatusChange = useCallback((newStatus: Parameters<typeof onUpdate>[1]['status']) => {
@@ -73,11 +73,11 @@ export function GameCard({ game, onUpdate, onDelete, draggable }: Props) {
     <div
       ref={setNodeRef}
       style={style as React.CSSProperties}
-      className={`card card-hover mb-2 ${isDragging ? 'shadow-2xl' : ''}`}
+      className={`card card-hover relative mb-2 focus-within:z-30 ${isDragging ? 'shadow-2xl' : ''}`}
     >
       {/* Collapsed row — height driven by CSS variable */}
       <div
-        className="flex items-stretch cursor-pointer select-none overflow-hidden rounded-lg"
+        className="flex items-stretch cursor-pointer select-none overflow-x-hidden overflow-y-visible rounded-lg"
         style={{ height: 'var(--card-height, 72px)' }}
         onClick={() => setExpanded(e => !e)}
       >
