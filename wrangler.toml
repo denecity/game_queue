@@ -7,6 +7,5 @@ binding = "DB"
 database_name = "gamequeue-db"
 database_id = "2a2c1631-3b8a-4a22-bc41-14bf103b2b2d"
 
-# Cron trigger for key price refresh is configured in the Cloudflare Dashboard
-# under Workers & Pages > your project > Settings > Triggers > Cron Triggers
-# Schedule: 0 */6 * * *
+# Deployed with `npm run deploy` (wrangler direct upload); Git-triggered builds are turned off.
+# Price refresh cron lives in workers/price-cron/ because Pages Functions cannot run cron triggers.

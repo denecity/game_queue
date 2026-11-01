@@ -11,24 +11,18 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     if (contentType.includes('text/html')) {
       throw new Error(`Request failed (HTTP ${res.status}). Please try again.`)
     }
-    throw new Error(text || `HTTP ${res.status}`)
+    let message = text || `HTTP ${res.status}`
+    try {
+      const parsed = JSON.parse(text) as { error?: string }
+      if (parsed.error) message = parsed.error
+    } catch { /* not JSON */ }
+    throw new Error(message)
   }
 
-  // Some endpoints (e.g. DELETE) return 204 No Content.
-  if (res.status === 204) {
-    return undefined as T
-  }
-
-  const contentType = res.headers.get('content-type') || ''
-  if (contentType.includes('application/json')) {
-    return res.json() as Promise<T>
-  }
+  if (res.status === 204) return undefined as T
 
   const text = await res.text()
-  if (!text) {
-    return undefined as T
-  }
-
+  if (!text) return undefined as T
   try {
     return JSON.parse(text) as T
   } catch {
@@ -36,14 +30,12 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   }
 }
 
-// Games
+export interface RefreshResult { processed: number; updated: number; remaining: number; itad: boolean }
+
 export const api = {
   games: {
-    list(params?: { status?: string; sort?: string; search?: string }): Promise<Game[]> {
-      const qs = new URLSearchParams(
-        Object.entries(params ?? {}).filter(([, v]) => v != null) as [string, string][]
-      ).toString()
-      return request<Game[]>(`/api/games${qs ? `?${qs}` : ''}`)
+    list(): Promise<Game[]> {
+      return request<Game[]>('/api/games')
     },
     create(body: Partial<Game>): Promise<Game> {
       return request<Game>('/api/games', { method: 'POST', body: JSON.stringify(body) })
@@ -53,6 +45,9 @@ export const api = {
     },
     remove(id: string): Promise<void> {
       return request<void>(`/api/games/${id}`, { method: 'DELETE' })
+    },
+    removeAll(): Promise<void> {
+      return request<void>('/api/games', { method: 'DELETE', body: JSON.stringify({ confirm: 'DELETE ALL' }) })
     },
     reorder(items: ReorderPayload[]): Promise<void> {
       return request<void>('/api/games/reorder', { method: 'PUT', body: JSON.stringify(items) })
@@ -65,18 +60,29 @@ export const api = {
     app(appid: number): Promise<SteamSearchResult> {
       return request<SteamSearchResult>(`/api/steam/app/${appid}`)
     },
-    importWishlist(url: string): Promise<{ added: number; skipped: number; games: Game[] }> {
+    importWishlist(url: string): Promise<{ added: number; skipped: number; totalWishlistItems: number }> {
       return request('/api/games/import-wishlist', { method: 'POST', body: JSON.stringify({ url }) })
     },
-  },
-  keyforsteam: {
-    refresh(): Promise<{ updated: number }> {
-      return request('/api/keyforsteam/refresh', { method: 'POST' })
+    importLibrary(profileUrl: string): Promise<{ added: number; skipped: number; total: number }> {
+      return request('/api/steam/import-library', { method: 'POST', body: JSON.stringify({ profileUrl }) })
     },
   },
-  library: {
-    import(profileUrl: string): Promise<{ added: number; skipped: number; total: number; games: { id: string; name: string }[] }> {
-      return request('/api/steam/import-library', { method: 'POST', body: JSON.stringify({ profileUrl }) })
+  prices: {
+    refresh(body: { ids?: string[]; before?: string } = {}): Promise<RefreshResult> {
+      return request('/api/prices/refresh', { method: 'POST', body: JSON.stringify(body) })
+    },
+  },
+  images: {
+    repair(body: { ids?: string[]; all?: boolean }): Promise<{ images: Record<string, string | null> }> {
+      return request('/api/images/repair', { method: 'POST', body: JSON.stringify(body) })
+    },
+  },
+  settings: {
+    get(): Promise<Record<string, unknown>> {
+      return request('/api/settings')
+    },
+    put(values: Record<string, unknown>): Promise<void> {
+      return request('/api/settings', { method: 'PUT', body: JSON.stringify(values) })
     },
   },
 }

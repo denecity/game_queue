@@ -1,0 +1,18 @@
+# Standalone Worker that keeps key/deal prices fresh. Pages Functions can't run cron
+# triggers, so this runs alongside the Pages project against the same D1 database.
+#
+# Deploy:   npx wrangler deploy --config workers/price-cron/wrangler.toml
+# ITAD key: npx wrangler secret put ITAD_API_KEY --config workers/price-cron/wrangler.toml
+name = "games-price-cron"
+main = "index.ts"
+workers_dev = false
+compatibility_date = "2024-12-01"
+
+[triggers]
+# Each run refreshes one batch (12 games), so every 10 minutes keeps ~100 games under 6h old
+crons = ["*/10 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "gamequeue-db"
+database_id = "2a2c1631-3b8a-4a22-bc41-14bf103b2b2d"

@@ -1,6 +1,7 @@
 # GameQueue
 
-Personal games backlog manager. Hosted on Cloudflare Pages with D1 (SQLite).
+Personal games backlog manager: queue, wishlist, archive, and the cheapest way to buy each game.
+Installable as an app (PWA) on phones and desktop. Hosted on Cloudflare Pages with D1 (SQLite).
 
 ## Local Development
 
@@ -9,55 +10,85 @@ npm install
 
 # Initialize local D1 database (first time only)
 npx wrangler d1 execute gamequeue-db --local --file=./migrations/0001_init.sql
+npx wrangler d1 execute gamequeue-db --local --file=./migrations/0002_prices_images_settings.sql
 
-# Start dev servers (Vite on 5173 + wrangler on 8788)
-npm run dev          # terminal 1
-npm run pages:dev    # terminal 2
+# Build, then serve the build + Functions + local D1
+npm run build
+npx wrangler pages dev dist
 
 # Open http://localhost:8788
 ```
 
-## Deploy to Cloudflare Pages
+Secrets for local dev go in `.dev.vars`:
 
-### 1. Create D1 database
-
-```bash
-npx wrangler d1 create gamequeue-db
+```
+STEAM_API_KEY=...
+ITAD_API_KEY=...
 ```
 
-Paste the returned `database_id` into `wrangler.toml`.
+## Deploy
 
-### 2. Run the migration
+Deploys go out with wrangler, not from GitHub. The Pages project (`games`) is still linked to the repo
+because Cloudflare can't unlink it without deleting the project, but its Git builds are switched off,
+so pushing never deploys.
 
 ```bash
-npx wrangler d1 execute gamequeue-db --remote --file=./migrations/0001_init.sql
+npm run deploy           # build + upload to production (games.mykinsky.org)
+npm run deploy:preview   # build + upload to preview.games-8wk.pages.dev
 ```
 
-### 3. Deploy
+### 1. Run the migration (once, before the first deploy of v0.2)
 
-**Option A — via Git (recommended)**
-1. Push this repo to GitHub.
-2. In Cloudflare Dashboard → **Pages** → **Create a project** → Connect GitHub repo.
-3. Set:
-   - Build command: `npm run build`
-   - Build output directory: `dist`
-4. Add D1 binding in Pages → **Settings** → **Functions** → **D1 database bindings**:
-   - Variable name: `DB`
-   - D1 database: `gamequeue-db`
-5. Deploy.
-
-**Option B — direct**
 ```bash
-npm run build
-npx wrangler pages deploy dist
+npm run db:migrate
 ```
+
+This adds the price/offer columns and the `settings` table, and clears key prices produced
+by the old scraper (they were often Steam *account* offers, not keys). They refill on the next refresh.
+
+### 2. Environment variables (Pages → Settings → Environment variables)
+
+| Name | Needed for |
+|---|---|
+| `STEAM_API_KEY` | Library import, resolving vanity profile URLs |
+| `ITAD_API_KEY` | Official-store deals and historical lows from IsThereAnyDeal (free key: https://isthereanydeal.com/apps/my/) |
+
+Without `ITAD_API_KEY` everything still works; you just get keyforsteam keyshop prices and Steam prices only.
+
+### 3. Price cron Worker (once, and again when server/ code changes)
+
+Pages Functions can't run cron triggers, so a tiny separate Worker refreshes prices every 10 minutes
+(one batch of 12 games per run) against the same D1 database:
+
+```bash
+npm run cron:deploy
+npx wrangler secret put ITAD_API_KEY --config workers/price-cron/wrangler.toml
+```
+
+If the Worker isn't deployed, the app still refreshes one batch each time it's opened.
+
+## How prices work
+
+- **Steam price**: refreshed from Steam's batched `IStoreBrowseService/GetItems` API.
+- **Keyshops** (keyforsteam): parsed from the page's embedded offer list; only in-stock *keys* for Global/EU
+  regions count. Accounts and region-locked keys are ignored.
+- **Official store deals** (IsThereAnyDeal): best current price across Steam, GOG, Humble, Fanatical, GMG, etc. in CHF.
+- Refreshes work in small batches of the stalest games, so a big library never times out a request.
+  keyforsteam rate-limits bursts, so a circuit breaker backs off and retries those games ~30 min later.
+
+## Covers
+
+New Steam apps use hashed asset URLs (the old `/steam/apps/{id}/header.jpg` 404s). When a cover fails to load,
+the client asks `/api/images/repair`, which tries Steam store assets → the game's own store page (`og:image`)
+→ Steam search by name → IsThereAnyDeal art, and saves what it finds. If nothing exists, a generated cover is drawn.
 
 ## Stack
 
 | Layer | Tech |
 |---|---|
-| Frontend | React 18, Vite, TypeScript, Tailwind CSS |
-| Backend | Cloudflare Pages Functions |
+| Frontend | React 18, Vite, TypeScript, Tailwind CSS, vite-plugin-pwa |
+| Backend | Cloudflare Pages Functions (`functions/`), shared logic in `server/` |
+| Cron | Cloudflare Worker (`workers/price-cron/`) |
 | Database | Cloudflare D1 (SQLite) |
 | Drag & Drop | @dnd-kit |
-| Game data | Steam Store API, SteamSpy, keyforsteam.de |
+| Game data | Steam Store APIs, SteamSpy, keyforsteam.de, IsThereAnyDeal |

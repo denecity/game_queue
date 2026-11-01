@@ -1,114 +1,119 @@
-import { useState, useEffect } from 'react'
-import type { Game } from '../lib/types'
+import { useEffect, useState } from 'react'
+import type { Game, SyncSource } from '../lib/types'
 import { api } from '../lib/api'
-
-interface SyncSource {
-  id: string
-  type: 'wishlist' | 'library'
-  url: string
-  label: string
-  lastSynced: string | null
-}
+import { Sheet } from './Sheet'
+import { useInstallPrompt } from '../hooks/useInstallPrompt'
+import { readLocal, showToast } from '../lib/utils'
 
 interface Props {
+  games: Game[]
   onClose: () => void
   onDataChanged: () => void
-  games: Game[]
-  cardHeight: number
-  onCardHeightChange: (h: number) => void
 }
 
-const SYNC_SOURCES_KEY = 'gq_sync_sources'
+const LEGACY_SOURCES_KEY = 'gq_sync_sources'
 
-function loadSources(): SyncSource[] {
-  try {
-    return JSON.parse(localStorage.getItem(SYNC_SOURCES_KEY) ?? '[]')
-  } catch {
-    return []
-  }
+function Section({ title, children, hint }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-3xl bg-white/[.03] ring-1 ring-white/[.06] p-4">
+      <h3 className="font-display font-bold text-base">{title}</h3>
+      {hint && <p className="text-xs text-ink-400 mt-1 mb-3 leading-relaxed">{hint}</p>}
+      {!hint && <div className="h-3" />}
+      {children}
+    </section>
+  )
 }
 
-function saveSources(sources: SyncSource[]) {
-  localStorage.setItem(SYNC_SOURCES_KEY, JSON.stringify(sources))
-}
-
-export function Settings({ onClose, onDataChanged, games, cardHeight, onCardHeightChange }: Props) {
-  const [sources, setSources] = useState<SyncSource[]>(loadSources)
+export function Settings({ games, onClose, onDataChanged }: Props) {
+  const install = useInstallPrompt()
+  const [sources, setSources] = useState<SyncSource[] | null>(null)
   const [newUrl, setNewUrl] = useState('')
   const [newType, setNewType] = useState<'wishlist' | 'library'>('wishlist')
-  const [newLabel, setNewLabel] = useState('')
-  const [syncingId, setSyncingId] = useState<string | null>(null)
-  const [syncResults, setSyncResults] = useState<Record<string, string>>({})
-  const [refreshing, setRefreshing] = useState(false)
-  const [refreshResult, setRefreshResult] = useState<string | null>(null)
-  const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [syncState, setSyncState] = useState<Record<string, string>>({})
+  const [priceProgress, setPriceProgress] = useState<string | null>(null)
+  const [imageState, setImageState] = useState<string | null>(null)
+  const [confirmText, setConfirmText] = useState('')
 
-  // Persist sources whenever they change
-  useEffect(() => { saveSources(sources) }, [sources])
+  // Sync sources live in D1 so they follow you to your phone; migrate any old localStorage list once
+  useEffect(() => {
+    api.settings.get().then(s => {
+      const server = (s.sync_sources as SyncSource[] | undefined) ?? []
+      const legacy = readLocal<SyncSource[]>(LEGACY_SOURCES_KEY, [])
+      if (!server.length && legacy.length) {
+        setSources(legacy)
+        api.settings.put({ sync_sources: legacy }).then(() => localStorage.removeItem(LEGACY_SOURCES_KEY)).catch(() => {})
+      } else {
+        setSources(server)
+      }
+    }).catch(() => setSources(readLocal<SyncSource[]>(LEGACY_SOURCES_KEY, [])))
+  }, [])
+
+  function saveSources(next: SyncSource[]) {
+    setSources(next)
+    api.settings.put({ sync_sources: next }).catch(() => showToast('Could not save sync sources', 'error'))
+  }
 
   function addSource() {
-    if (!newUrl.trim()) return
-    const source: SyncSource = {
-      id: crypto.randomUUID(),
-      type: newType,
-      url: newUrl.trim(),
-      label: newLabel.trim() || newUrl.trim(),
-      lastSynced: null,
-    }
-    setSources(prev => [...prev, source])
+    if (!newUrl.trim() || !sources) return
+    saveSources([...sources, { id: crypto.randomUUID(), type: newType, url: newUrl.trim(), label: newUrl.trim(), lastSynced: null }])
     setNewUrl('')
-    setNewLabel('')
   }
 
-  function removeSource(id: string) {
-    setSources(prev => prev.filter(s => s.id !== id))
-  }
-
-  async function syncSource(source: SyncSource) {
-    setSyncingId(source.id)
-    setSyncResults(prev => ({ ...prev, [source.id]: 'Syncing…' }))
+  async function sync(source: SyncSource) {
+    setSyncState(s => ({ ...s, [source.id]: '⏳ Syncing…' }))
     try {
-      let msg: string
-      if (source.type === 'wishlist') {
-        const r = await api.steam.importWishlist(source.url)
-        msg = `✓ Added ${r.added} game${r.added !== 1 ? 's' : ''}${r.skipped ? ` (${r.skipped} already in library)` : ''}`
-      } else {
-        const r = await api.library.import(source.url)
-        msg = `✓ Added ${r.added} game${r.added !== 1 ? 's' : ''} (${r.skipped} already present, ${r.total} total in library)`
-      }
-      setSources(prev => prev.map(s => s.id === source.id ? { ...s, lastSynced: new Date().toISOString() } : s))
-      setSyncResults(prev => ({ ...prev, [source.id]: msg }))
+      const r = source.type === 'wishlist'
+        ? await api.steam.importWishlist(source.url)
+        : await api.steam.importLibrary(source.url)
+      setSyncState(s => ({ ...s, [source.id]: `✓ ${r.added} new, ${r.skipped} already here` }))
+      setSources(prev => {
+        const next = (prev ?? []).map(x => x.id === source.id ? { ...x, lastSynced: new Date().toISOString() } : x)
+        api.settings.put({ sync_sources: next }).catch(() => {})
+        return next
+      })
       onDataChanged()
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setSyncResults(prev => ({ ...prev, [source.id]: '✗ ' + msg }))
-    } finally {
-      setSyncingId(null)
+      setSyncState(s => ({ ...s, [source.id]: '✗ ' + (e instanceof Error ? e.message : String(e)) }))
     }
   }
 
-  async function syncAll() {
-    for (const source of sources) {
-      await syncSource(source)
-    }
-  }
-
-  async function handleRefreshKeyPrices() {
-    setRefreshing(true)
-    setRefreshResult(null)
+  async function refreshAllPrices() {
+    const before = new Date().toISOString()
+    const total = games.filter(g => g.steam_app_id).length
+    let lastRemaining = Infinity
+    let stalled = 0
     try {
-      const result = await api.keyforsteam.refresh()
-      setRefreshResult(`Updated ${result.updated} key prices.`)
-    } catch (err) {
-      setRefreshResult('Refresh failed: ' + String(err))
-    } finally {
-      setRefreshing(false)
+      for (;;) {
+        const r = await api.prices.refresh({ before })
+        setPriceProgress(`${total - r.remaining} / ${total} checked…`)
+        if (r.remaining === 0 || r.processed === 0) break
+        // keyforsteam may be rate-limiting; give up after a few rounds without progress
+        stalled = r.remaining >= lastRemaining ? stalled + 1 : 0
+        if (stalled >= 3) { setPriceProgress('Paused: a price source is rate-limiting. The rest will update in the background.'); onDataChanged(); return }
+        lastRemaining = r.remaining
+        await new Promise(res => setTimeout(res, 1200))
+      }
+      setPriceProgress(`✓ All ${total} games checked`)
+      onDataChanged()
+    } catch (e) {
+      setPriceProgress('✗ ' + (e instanceof Error ? e.message : String(e)))
     }
   }
 
-  function handleExport() {
-    const json = JSON.stringify(games, null, 2)
-    const blob = new Blob([json], { type: 'application/json' })
+  async function repairImages() {
+    setImageState('Looking for covers…')
+    try {
+      const { images } = await api.images.repair({ all: true })
+      const n = Object.values(images).filter(Boolean).length
+      setImageState(`✓ Checked ${n} covers`)
+      onDataChanged()
+    } catch (e) {
+      setImageState('✗ ' + (e instanceof Error ? e.message : String(e)))
+    }
+  }
+
+  function exportJson() {
+    const blob = new Blob([JSON.stringify(games, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -117,175 +122,92 @@ export function Settings({ onClose, onDataChanged, games, cardHeight, onCardHeig
     URL.revokeObjectURL(url)
   }
 
+  async function deleteAll() {
+    try {
+      await api.games.removeAll()
+      setConfirmText('')
+      showToast('Library wiped', 'info')
+      onDataChanged()
+    } catch (e) {
+      showToast('Delete failed: ' + (e instanceof Error ? e.message : String(e)), 'error')
+    }
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
-      <div
-        className="card p-6 w-full max-w-lg shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-slate-100">Settings</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-xl leading-none">&times;</button>
-        </div>
-
-        {/* Sync sources */}
-        <section className="mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-slate-300">Steam Sync Sources</h3>
-            {sources.length > 1 && (
-              <button
-                onClick={syncAll}
-                disabled={syncingId !== null}
-                className="text-xs text-[#4fd1c5] hover:text-[#38b2ac] disabled:opacity-50"
-              >
-                Sync all
-              </button>
+    <Sheet onClose={onClose} title="Settings" wide>
+      <div className="px-5 pb-8 space-y-3">
+        {!install.installed && (
+          <Section title="📲 Install the app" hint="Get GameQueue on your home screen. It opens full-screen and works offline with your last synced list.">
+            {install.canPrompt ? (
+              <button onClick={install.install} className="btn-primary w-full">Install GameQueue</button>
+            ) : install.iosHint ? (
+              <p className="text-sm text-ink-300">In Safari, tap <b>Share</b> <span aria-hidden>⎋</span>, then <b>Add to Home Screen</b>.</p>
+            ) : (
+              <p className="text-sm text-ink-300">Use your browser menu: <b>Install app</b> or <b>Add to Home screen</b>.</p>
             )}
-          </div>
-          <p className="text-xs text-slate-500 mb-3">
-            Add Steam wishlist or profile URLs. Wishlists sync to the Wishlist tab; Steam libraries (played games) sync to Archive.
-          </p>
+          </Section>
+        )}
 
-          {/* Saved sources */}
-          {sources.length > 0 && (
-            <div className="space-y-2 mb-3">
-              {sources.map(source => (
-                <div key={source.id} className="flex items-center gap-2 bg-[#20242c] border border-[#2a2d35] rounded px-3 py-2">
-                  <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${source.type === 'wishlist' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'}`}>
-                    {source.type === 'wishlist' ? 'Wishlist' : 'Library'}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-slate-200 truncate">{source.label}</div>
-                    {source.lastSynced && (
-                      <div className="text-xs text-slate-500">Last synced: {new Date(source.lastSynced).toLocaleDateString()}</div>
-                    )}
-                    {syncResults[source.id] && (
-                      <div className={`text-xs break-words ${syncResults[source.id].startsWith('✓') ? 'text-[#4fd1c5]' : 'text-amber-400'}`}>
-                        {syncResults[source.id]}
-                      </div>
-                    )}
+        <Section title="🔄 Steam sync" hint="Wishlists land in Wishlist. Libraries bring your 100 most-played games into Archive.">
+          <div className="space-y-2">
+            {sources === null && <div className="h-12 rounded-2xl skeleton" />}
+            {sources?.map(s => (
+              <div key={s.id} className="flex items-center gap-2 rounded-2xl bg-ink-800 px-3 py-2.5">
+                <span className={`chip flex-shrink-0 ${s.type === 'wishlist' ? 'bg-pop-violet/15 text-pop-violet' : 'bg-pop-pink/15 text-pop-pink'}`}>
+                  {s.type === 'wishlist' ? '✨ Wishlist' : '🏆 Library'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm truncate">{s.label}</div>
+                  <div className="text-[11px] text-ink-500 truncate">
+                    {syncState[s.id] ?? (s.lastSynced ? `Synced ${new Date(s.lastSynced).toLocaleDateString()}` : 'Never synced')}
                   </div>
-                  <button
-                    onClick={() => syncSource(source)}
-                    disabled={syncingId === source.id}
-                    className="text-xs text-slate-400 hover:text-[#4fd1c5] disabled:opacity-50 flex-shrink-0"
-                  >
-                    {syncingId === source.id ? '⟳' : 'Sync'}
-                  </button>
-                  <button
-                    onClick={() => removeSource(source.id)}
-                    className="text-xs text-slate-600 hover:text-red-400 flex-shrink-0"
-                  >
-                    ✕
-                  </button>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Add new source */}
-          <div className="space-y-2 border border-[#2a2d35] rounded p-3">
-            <div className="flex gap-2">
-              <select
-                value={newType}
-                onChange={e => setNewType(e.target.value as 'wishlist' | 'library')}
-                className="bg-[#20242c] border border-[#2a2d35] rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#4fd1c5]"
-              >
+                <button onClick={() => sync(s)} className="btn-soft text-xs px-3 py-1.5">Sync</button>
+                <button onClick={() => saveSources(sources.filter(x => x.id !== s.id))} className="btn-icon w-8 h-8 text-ink-500 hover:text-pop-coral" aria-label="Remove">✕</button>
+              </div>
+            ))}
+            <div className="flex gap-2 pt-1">
+              <select value={newType} onChange={e => setNewType(e.target.value as 'wishlist' | 'library')} className="field w-auto px-3">
                 <option value="wishlist">Wishlist</option>
-                <option value="library">Library → Archive</option>
+                <option value="library">Library</option>
               </select>
-              <input
-                value={newLabel}
-                onChange={e => setNewLabel(e.target.value)}
-                placeholder="Label (optional)"
-                className="flex-1 bg-[#20242c] border border-[#2a2d35] rounded px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#4fd1c5]"
-              />
-            </div>
-            <div className="flex gap-2">
               <input
                 value={newUrl}
                 onChange={e => setNewUrl(e.target.value)}
-                placeholder={newType === 'wishlist'
-                  ? 'https://store.steampowered.com/wishlist/id/USERNAME/'
-                  : 'https://steamcommunity.com/id/USERNAME/ or /profiles/STEAMID64/'}
-                className="flex-1 bg-[#20242c] border border-[#2a2d35] rounded px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#4fd1c5]"
+                placeholder="steamcommunity.com/id/you"
+                className="field"
+                onKeyDown={e => e.key === 'Enter' && addSource()}
               />
-              <button
-                onClick={addSource}
-                disabled={!newUrl.trim()}
-                className="btn-primary text-xs px-3 py-1.5 disabled:opacity-50"
-              >
-                Add
-              </button>
+              <button onClick={addSource} disabled={!newUrl.trim()} className="btn-soft">Add</button>
             </div>
           </div>
-        </section>
+        </Section>
 
-        {/* Widget size */}
-        <section className="mb-6">
-          <h3 className="text-sm font-semibold text-slate-300 mb-2">Widget Size</h3>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-500 w-12">Compact</span>
-            <input
-              type="range"
-              min={48}
-              max={120}
-              step={8}
-              value={cardHeight}
-              onChange={e => onCardHeightChange(parseInt(e.target.value, 10))}
-              className="flex-1 accent-[#4fd1c5]"
-            />
-            <span className="text-xs text-slate-500 w-12 text-right">Large</span>
-            <span className="text-xs font-mono text-[#4fd1c5] w-10 text-right">{cardHeight}px</span>
+        <Section title="💸 Prices" hint="Keyshop prices come from keyforsteam and store deals from IsThereAnyDeal. A background job keeps them fresh. This checks everything now.">
+          <button onClick={refreshAllPrices} disabled={!!priceProgress && priceProgress.endsWith('…')} className="btn-soft w-full">
+            Refresh all prices
+          </button>
+          {priceProgress && <p className="text-xs text-ink-300 mt-2">{priceProgress}</p>}
+        </Section>
+
+        <Section title="🖼️ Covers" hint="Re-fetch artwork for every Steam game. Broken covers also fix themselves as you scroll.">
+          <button onClick={repairImages} className="btn-soft w-full">Repair all covers</button>
+          {imageState && <p className="text-xs text-ink-300 mt-2">{imageState}</p>}
+        </Section>
+
+        <Section title="📦 Backup">
+          <button onClick={exportJson} className="btn-soft w-full">Download JSON ({games.length} games)</button>
+        </Section>
+
+        <Section title="⚠️ Danger zone" hint='Type "DELETE ALL" to permanently remove every game.'>
+          <div className="flex gap-2">
+            <input value={confirmText} onChange={e => setConfirmText(e.target.value)} placeholder="DELETE ALL" className="field" />
+            <button onClick={deleteAll} disabled={confirmText !== 'DELETE ALL'} className="btn bg-pop-coral text-ink-950">Wipe</button>
           </div>
-        </section>
+        </Section>
 
-        {/* Key Price Refresh */}
-        <section className="mb-6">
-          <h3 className="text-sm font-semibold text-slate-300 mb-2">Key Prices</h3>
-          <p className="text-xs text-slate-500 mb-2">Auto-refreshes every 6 hours via cron. Manually refresh now:</p>
-          <button
-            onClick={handleRefreshKeyPrices}
-            disabled={refreshing}
-            className="btn-ghost border border-[#2a2d35] w-full text-sm"
-          >
-            {refreshing ? 'Refreshing…' : 'Refresh All Key Prices'}
-          </button>
-          {refreshResult && <p className="text-sm text-[#4fd1c5] mt-2">{refreshResult}</p>}
-        </section>
-
-        {/* Export */}
-        <section className="mb-6">
-          <h3 className="text-sm font-semibold text-slate-300 mb-2">Export Data</h3>
-          <button onClick={handleExport} className="btn-ghost border border-[#2a2d35] w-full text-sm">
-            Download as JSON ({games.length} games)
-          </button>
-        </section>
-
-        {/* Danger zone */}
-        <section className="border-t border-[#2a2d35] pt-4">
-          <h3 className="text-sm font-semibold text-red-400 mb-3">Danger Zone</h3>
-          {!deleteConfirm ? (
-            <button
-              onClick={() => setDeleteConfirm(true)}
-              className="w-full text-sm text-red-400 hover:text-red-300 border border-red-400/30 rounded py-2 transition-colors"
-            >
-              Delete All Games
-            </button>
-          ) : (
-            <div className="space-y-2">
-              <p className="text-sm text-slate-400">This cannot be undone. Are you sure?</p>
-              <div className="flex gap-2">
-                <button onClick={() => setDeleteConfirm(false)} className="flex-1 text-sm text-slate-400 border border-[#2a2d35] rounded py-2">
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-        </section>
-
-        <p className="text-xs text-slate-600 mt-6 text-center">GameQueue v0.1.0</p>
+        <p className="text-center text-xs text-ink-600 pt-2">GameQueue v0.2 · made with ✨</p>
       </div>
-    </div>
+    </Sheet>
   )
 }

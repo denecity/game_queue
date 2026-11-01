@@ -1,206 +1,250 @@
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useGames } from './hooks/useGames'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { SearchBar } from './components/SearchBar'
-import { TabBar } from './components/TabBar'
+import { useIsDesktop } from './hooks/useMediaQuery'
 import { GameList } from './components/GameList'
-import { FilterSort } from './components/FilterSort'
-import { AddGameModal } from './components/AddGameModal'
+import { CoverCard } from './components/GameCards'
+import { Toolbar } from './components/Toolbar'
+import { TabPills, BottomNav } from './components/Navigation'
+import { SearchSheet } from './components/SearchSheet'
+import { AddGameSheet } from './components/AddGameSheet'
+import { GameSheet } from './components/GameSheet'
+import { RatePrompt } from './components/RatePrompt'
 import { EmptyState } from './components/EmptyState'
 import { Settings } from './components/Settings'
 import { ToastContainer } from './components/Toast'
-import type { SteamSearchResult, TabName, Game } from './lib/types'
+import type { Game, GameStatus, SteamSearchResult, TabName, ViewMode } from './lib/types'
 import { api } from './lib/api'
+import { setRepairListener } from './lib/imageRepair'
+import { STATUS_META, TAB_META, tabForStatus, readLocal, writeLocal, showToast } from './lib/utils'
 
-const KEY_PRICE_REFRESH_KEY = 'gq_last_key_refresh'
-const KEY_PRICE_REFRESH_INTERVAL = 6 * 60 * 60 * 1000
+type AddPrefill = SteamSearchResult | { customName: string }
 
 export default function App() {
-  const searchInputRef = useRef<HTMLInputElement>(null)
-  const [activeTab, setActiveTab] = useState<TabName>('queue')
-  const [addModalPrefill, setAddModalPrefill] = useState<SteamSearchResult | null | 'custom'>(null)
-  const [bulkQueue, setBulkQueue] = useState<SteamSearchResult[]>([])
+  const isDesktop = useIsDesktop()
+  const [activeTab, setActiveTabState] = useState<TabName>(() => readLocal<TabName>('gq_tab', 'queue'))
+  const [view, setViewState] = useState<ViewMode>(() => readLocal<ViewMode>('gq_view', 'covers'))
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [addPrefill, setAddPrefill] = useState<AddPrefill | null>(null)
+  const [openGameId, setOpenGameId] = useState<string | null>(null)
+  const [ratingFor, setRatingFor] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
 
-  // Card height preference (px) — drives --card-height CSS variable
-  const [cardHeight, setCardHeight] = useState<number>(() =>
-    parseInt(localStorage.getItem('gq_card_height') ?? '72', 10)
-  )
-
-  useEffect(() => {
-    document.documentElement.style.setProperty('--card-height', cardHeight + 'px')
-    localStorage.setItem('gq_card_height', String(cardHeight))
-  }, [cardHeight])
-
   const {
-    games,
-    queueGames,
-    wishlistGames,
-    archiveGames,
-    allTags,
-    loading,
-    sort,
-    setSort,
-    filter,
-    setFilter,
-    addGame,
-    updateGame,
-    removeGame,
-    reorderGames,
-    refetch,
+    games, queueGames, wishlistGames, archiveGames, allTags, loading,
+    sort, setSort, filter, setFilter,
+    addGame, updateGame, removeGame, reorderGames, patchLocal, refetch,
   } = useGames()
 
-  useEffect(() => {
-    const last = parseInt(localStorage.getItem(KEY_PRICE_REFRESH_KEY) ?? '0', 10)
-    if (Date.now() - last > KEY_PRICE_REFRESH_INTERVAL) {
-      api.keyforsteam.refresh().then(() => {
-        localStorage.setItem(KEY_PRICE_REFRESH_KEY, String(Date.now()))
-        refetch()
-      }).catch(() => {})
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // Read through a ref so handleStatus keeps one identity and memoised cards don't all re-render
+  const gamesRef = useRef(games)
+  gamesRef.current = games
 
-  const focusSearch = useCallback(() => {
-    searchInputRef.current?.focus()
-    searchInputRef.current?.select()
+  const setActiveTab = useCallback((t: TabName) => {
+    setActiveTabState(t)
+    writeLocal('gq_tab', t)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [])
+  const setView = (v: ViewMode) => { setViewState(v); writeLocal('gq_view', v) }
 
-  const handleEscape = useCallback(() => {
-    if (addModalPrefill !== null) {
-      setAddModalPrefill(null)
-      setBulkQueue([])
-    } else {
-      setShowSettings(false)
+  useEffect(() => setRepairListener((id, url) => patchLocal(id, { image_url: url })), [patchLocal])
+
+  // Nudge one batch of stale prices on open, in case the cron Worker isn't deployed
+  useEffect(() => {
+    api.prices.refresh().then(r => { if (r.updated > 0) refetch() }).catch(() => {})
+  }, [refetch])
+
+  const openSearch = useCallback(() => setSearchOpen(true), [])
+
+  // Home-screen shortcut (manifest) opens straight into search
+  useEffect(() => {
+    if (new URLSearchParams(location.search).has('search')) {
+      history.replaceState(null, '', '/')
+      openSearch()
     }
-  }, [addModalPrefill])
+  }, [openSearch])
+  useKeyboardShortcuts({ onSearch: openSearch, onTabSwitch: setActiveTab })
 
-  useKeyboardShortcuts({ onFocusSearch: focusSearch, onTabSwitch: setActiveTab, onEscape: handleEscape })
-
-  async function handleSelectSearchResult(result: SteamSearchResult) {
-    if (addModalPrefill !== null && addModalPrefill !== 'custom') {
-      setBulkQueue(prev => prev.some(r => r.appid === result.appid) ? prev : [...prev, result])
+  const handleStatus = useCallback((id: string, status: GameStatus) => {
+    const game = gamesRef.current.find(g => g.id === id)
+    if (!game || game.status === status) return
+    if (status === 'done' && game.rating == null) {
+      setRatingFor(id)
       return
     }
-    try {
-      const full = await api.steam.app(result.appid)
-      setAddModalPrefill({ ...result, ...full })
-    } catch {
-      setAddModalPrefill(result)
-    }
-  }
+    updateGame(id, { status })
+    const meta = STATUS_META[status]
+    const movedTab = tabForStatus(status) !== tabForStatus(game.status)
+    showToast(
+      `${meta.emoji} ${game.name} → ${meta.label}${movedTab ? ` (in ${TAB_META[tabForStatus(status)].label})` : ''}`,
+      'success',
+      { label: 'Undo', run: () => updateGame(id, { status: game.status }) },
+    )
+  }, [updateGame])
 
-  async function handleAddGame(partial: Partial<Game>) {
+  const handleAdd = useCallback(async (partial: Partial<Game>) => {
     const saved = await addGame(partial)
+    if (saved) showToast(`${STATUS_META[saved.status].emoji} Added ${saved.name}`, 'success')
+    return saved
+  }, [addGame])
+
+  async function confirmAdd(partial: Partial<Game>) {
+    const saved = await handleAdd(partial)
     if (saved) {
-      if (saved.status === 'none') setActiveTab('wishlist')
-      else if (saved.status === 'done') setActiveTab('archive')
-      else setActiveTab('queue')
-    }
-    if (bulkQueue.length > 0) {
-      const [next, ...rest] = bulkQueue
-      setBulkQueue(rest)
-      try {
-        const full = await api.steam.app(next.appid)
-        setAddModalPrefill({ ...next, ...full })
-      } catch {
-        setAddModalPrefill(next)
-      }
-    } else {
-      setAddModalPrefill(null)
+      setAddPrefill(null)
+      setActiveTab(tabForStatus(saved.status))
     }
   }
 
-  async function handleAddAll(partials: Partial<Game>[]) {
-    for (const partial of partials) await addGame(partial)
-    setAddModalPrefill(null)
-    setBulkQueue([])
-    refetch()
-  }
+  const ownedAppIds = useMemo(() => new Set(games.map(g => g.steam_app_id).filter((x): x is number => x != null)), [games])
+  const openGame = openGameId ? games.find(g => g.id === openGameId) : null
+  const ratingGame = ratingFor ? games.find(g => g.id === ratingFor) : null
 
-  function handleCloseModal() {
-    setAddModalPrefill(null)
-    setBulkQueue([])
-  }
+  const currentGames = activeTab === 'queue' ? queueGames : activeTab === 'wishlist' ? wishlistGames : archiveGames
+  const counts = { queue: queueGames.length, wishlist: wishlistGames.length, archive: archiveGames.length }
+  const totalEmpty = !loading && games.length === 0
+  const filterActive = filter.tags.length > 0 || filter.rated !== 'all' || filter.onSale
 
-  const currentGames = activeTab === 'queue' ? queueGames
-    : activeTab === 'wishlist' ? wishlistGames
-    : archiveGames
-
-  const isManualSort = sort === 'manual'
-  const isDraggable = isManualSort && activeTab !== 'archive'
-  const totalEmpty = queueGames.length === 0 && wishlistGames.length === 0 && archiveGames.length === 0
+  // On the queue tab, games you're playing get a hero row; the rest is the reorderable "up next" list
+  const nowPlaying = activeTab === 'queue' ? currentGames.filter(g => g.status === 'playing') : []
+  const listGames = activeTab === 'queue' && nowPlaying.length ? currentGames.filter(g => g.status !== 'playing') : currentGames
+  const draggable = sort === 'manual' && activeTab !== 'archive' && !filterActive
 
   return (
-    <div className="min-h-screen bg-[#0f1115] text-slate-200">
-      <div className="max-w-4xl mx-auto px-4 py-6">
-        <header className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            🎮 <span>GameQueue</span>
+    <div className="min-h-dvh pb-[calc(110px+var(--safe-bottom))] md:pb-16">
+      <header className="sticky top-0 z-30 pt-safe bg-ink-950/75 backdrop-blur-xl border-b border-white/[.04]">
+        <div className="max-w-6xl mx-auto px-4 md:px-6 h-16 flex items-center gap-4">
+          <h1 className="font-display text-2xl font-extrabold tracking-tight flex items-center gap-1.5 select-none">
+            <span className="inline-block animate-bob">🎮</span>
+            <span>Game<span className="text-gradient">Queue</span></span>
           </h1>
-          <button onClick={() => setShowSettings(true)} className="btn-ghost text-lg" title="Settings">⚙</button>
-        </header>
-
-        <div className="flex items-center gap-2 mb-4">
-          <SearchBar
-            onSelectResult={handleSelectSearchResult}
-            onAddCustom={() => setAddModalPrefill('custom')}
-            searchInputRef={searchInputRef as React.RefObject<HTMLInputElement>}
-          />
-        </div>
-
-        <div className="flex items-center justify-between mb-4">
-          <TabBar
-            active={activeTab}
-            counts={{ queue: queueGames.length, wishlist: wishlistGames.length, archive: archiveGames.length }}
-            onSwitch={setActiveTab}
-          />
-          <FilterSort sort={sort} onSortChange={setSort} filter={filter} onFilterChange={setFilter} availableTags={allTags} />
-        </div>
-
-        {!isManualSort && activeTab !== 'archive' && (
-          <div className="text-xs text-slate-500 mb-2 flex items-center gap-1">
-            <span>⚠</span> Manual reordering disabled while sorted. Switch to "Manual Order" to drag.
+          {isDesktop && <div className="flex-1 flex justify-center"><TabPills active={activeTab} counts={counts} onSwitch={setActiveTab} /></div>}
+          <div className="ml-auto md:ml-0 flex items-center gap-1">
+            {isDesktop ? (
+              <>
+                <button onClick={openSearch} className="h-10 pl-3 pr-2 rounded-2xl bg-white/[.05] hover:bg-white/[.09] text-sm text-ink-400 flex items-center gap-6 transition">
+                  <span>🔍 Find games</span>
+                  <kbd className="text-[11px] font-mono bg-white/[.08] rounded-lg px-1.5 py-0.5">/</kbd>
+                </button>
+                <button onClick={() => setShowSettings(true)} className="btn-icon" aria-label="Settings">⚙️</button>
+              </>
+            ) : (
+              <button onClick={openSearch} className="btn-icon text-lg" aria-label="Search">🔍</button>
+            )}
           </div>
-        )}
+        </div>
+      </header>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-20 text-slate-500">Loading…</div>
-        ) : totalEmpty ? (
-          <EmptyState onImportWishlist={() => setShowSettings(true)} onAddCustom={() => setAddModalPrefill('custom')} />
-        ) : currentGames.length === 0 ? (
-          <div className="text-center py-12 text-slate-500">
-            {activeTab === 'queue' && 'No games in your queue.'}
-            {activeTab === 'wishlist' && 'Your wishlist is empty. Search for games above.'}
-            {activeTab === 'archive' && "You haven't completed any games yet."}
-          </div>
+      <main className="max-w-6xl mx-auto px-4 md:px-6 pt-5">
+        {totalEmpty ? (
+          <EmptyState onSearch={openSearch} onImport={() => setShowSettings(true)} />
         ) : (
-          <GameList games={currentGames} onUpdate={updateGame} onDelete={removeGame} onReorder={reorderGames} draggable={isDraggable} />
-        )}
-      </div>
+          <>
+            {nowPlaying.length > 0 && (
+              <section className="mb-7">
+                <SectionTitle emoji="🔥" title="Now playing" count={nowPlaying.length} />
+                <div className="flex md:grid md:grid-cols-2 xl:grid-cols-3 gap-4 overflow-x-auto no-scrollbar snap-x snap-mandatory -mx-4 px-4 md:mx-0 md:px-0 pb-2">
+                  {nowPlaying.map(g => (
+                    <div key={g.id} className="snap-center flex-shrink-0 w-[85%] sm:w-[60%] md:w-auto">
+                      <CoverCard game={g} onOpen={setOpenGameId} onStatus={handleStatus} />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
-      {addModalPrefill !== null && (
-        <AddGameModal
-          prefill={addModalPrefill === 'custom' ? null : addModalPrefill}
-          activeTab={activeTab}
-          pendingQueue={bulkQueue}
-          onConfirm={handleAddGame}
-          onConfirmAll={handleAddAll}
-          onRemoveFromQueue={appid => setBulkQueue(prev => prev.filter(r => r.appid !== appid))}
-          onClose={handleCloseModal}
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 mb-4">
+              <SectionTitle
+                emoji={nowPlaying.length ? '⏭️' : TAB_META[activeTab].emoji}
+                title={nowPlaying.length ? 'Up next' : TAB_META[activeTab].label}
+                count={listGames.length}
+                big
+              />
+              <Toolbar sort={sort} onSort={setSort} filter={filter} onFilter={setFilter} tags={allTags} view={view} onView={setView} />
+            </div>
+
+            {!draggable && activeTab !== 'archive' && listGames.length > 1 && (
+              <p className="text-xs text-ink-500 mb-3">{filterActive ? 'Clear filters' : 'Switch to “My order”'} to drag games around.</p>
+            )}
+
+            {loading && games.length === 0 ? (
+              <div className={view === 'covers' ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-2'}>
+                {Array.from({ length: 6 }, (_, i) => <div key={i} className={`skeleton rounded-3xl ${view === 'covers' ? 'aspect-[460/260]' : 'h-[76px]'}`} />)}
+              </div>
+            ) : listGames.length === 0 ? (
+              <div className="text-center py-16 text-ink-400 animate-pop-in">
+                <div className="text-5xl mb-3">{filterActive ? '🧐' : TAB_META[activeTab].emoji}</div>
+                <p>{filterActive ? 'Nothing matches those filters.' : nowPlaying.length ? 'Nothing else queued up.' : TAB_META[activeTab].empty}</p>
+              </div>
+            ) : (
+              <GameList
+                games={listGames}
+                view={view}
+                draggable={draggable}
+                onOpen={setOpenGameId}
+                onStatus={handleStatus}
+                onReorder={reorderGames}
+              />
+            )}
+          </>
+        )}
+      </main>
+
+      {!isDesktop && <BottomNav active={activeTab} counts={counts} onSwitch={setActiveTab} onAdd={openSearch} onSettings={() => setShowSettings(true)} />}
+
+      {searchOpen && (
+        <SearchSheet
+          ownedAppIds={ownedAppIds}
+          onClose={() => setSearchOpen(false)}
+          onQuickAdd={handleAdd}
+          onOpenDetails={r => { setSearchOpen(false); setAddPrefill(r) }}
+          onCustom={name => { setSearchOpen(false); setAddPrefill({ customName: name }) }}
+        />
+      )}
+
+      {addPrefill && (
+        <AddGameSheet prefill={addPrefill} activeTab={activeTab} onConfirm={confirmAdd} onClose={() => setAddPrefill(null)} />
+      )}
+
+      {openGame && (
+        <GameSheet
+          key={openGame.id}
+          game={openGame}
+          onClose={() => setOpenGameId(null)}
+          onUpdate={updateGame}
+          onStatus={handleStatus}
+          onDelete={removeGame}
+          onRefreshed={refetch}
+        />
+      )}
+
+      {ratingGame && (
+        <RatePrompt
+          game={ratingGame}
+          onClose={() => setRatingFor(null)}
+          onDone={rating => {
+            updateGame(ratingGame.id, { status: 'done', ...(rating != null ? { rating } : {}) })
+            showToast(`🏆 ${ratingGame.name} archived`, 'success', { label: 'Undo', run: () => updateGame(ratingGame.id, { status: ratingGame.status, rating: null }) })
+            setRatingFor(null)
+          }}
         />
       )}
 
       {showSettings && (
-        <Settings
-          onClose={() => setShowSettings(false)}
-          onDataChanged={() => { setShowSettings(false); refetch() }}
-          games={games}
-          cardHeight={cardHeight}
-          onCardHeightChange={setCardHeight}
-        />
+        <Settings games={games} onClose={() => setShowSettings(false)} onDataChanged={refetch} />
       )}
 
       <ToastContainer />
     </div>
+  )
+}
+
+function SectionTitle({ emoji, title, count, big }: { emoji: string; title: string; count: number; big?: boolean }) {
+  return (
+    <h2 className={`font-display font-extrabold flex items-center gap-2 ${big ? 'text-2xl md:text-3xl' : 'text-lg mb-3'}`}>
+      <span aria-hidden>{emoji}</span>
+      {title}
+      <span className="text-sm font-bold text-ink-500 tabular-nums">{count}</span>
+    </h2>
   )
 }

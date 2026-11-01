@@ -1,17 +1,4 @@
-import type { D1Database } from '@cloudflare/workers-types'
-
-interface Env {
-  DB: D1Database
-}
-
-function parseGame(row: Record<string, unknown>) {
-  return {
-    ...row,
-    tags: row.tags ? JSON.parse(row.tags as string) : [],
-    is_custom: row.is_custom === 1,
-    hours_played: row.hours_played ?? 0,
-  }
-}
+import { parseGame, type Env } from '../../../server/common'
 
 export const onRequestPut: PagesFunction<Env> = async ({ request, env, params }) => {
   const id = params.id as string
@@ -20,7 +7,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
   const allowed = [
     'name', 'image_url', 'price', 'rating', 'status', 'queue_position',
     'tags', 'notes', 'hours_played', 'date_completed', 'steam_url',
-    'player_count', 'player_count_recent', 'key_price', 'key_price_url', 'key_price_updated'
+    'player_count', 'player_count_recent',
   ]
 
   const setClauses: string[] = []

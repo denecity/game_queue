@@ -1,23 +1,17 @@
 interface Props {
-  onImportWishlist: () => void
-  onAddCustom: () => void
+  onImport: () => void
+  onSearch: () => void
 }
 
-export function EmptyState({ onImportWishlist, onAddCustom }: Props) {
+export function EmptyState({ onImport, onSearch }: Props) {
   return (
-    <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="text-5xl mb-4">🎮</div>
-      <h2 className="text-xl font-semibold text-slate-200 mb-2">Your queue is empty!</h2>
-      <p className="text-slate-400 mb-6">
-        Search for a Steam game above to get started, or import your Steam wishlist.
-      </p>
-      <div className="flex gap-3">
-        <button onClick={onImportWishlist} className="btn-primary">
-          Import Steam Wishlist
-        </button>
-        <button onClick={onAddCustom} className="btn-ghost border border-[#2a2d35]">
-          + Add Custom
-        </button>
+    <div className="flex flex-col items-center justify-center py-20 text-center animate-pop-in">
+      <div className="text-7xl mb-5 animate-bob">🎮</div>
+      <h2 className="font-display text-3xl font-extrabold mb-2">Your queue is <span className="text-gradient">wide open</span></h2>
+      <p className="text-ink-400 mb-8 max-w-sm">Find games to add, or pull in your Steam wishlist in one go.</p>
+      <div className="flex flex-wrap justify-center gap-3">
+        <button onClick={onSearch} className="btn-primary">🔍 Find games</button>
+        <button onClick={onImport} className="btn-soft">🔄 Import from Steam</button>
       </div>
     </div>
   )
