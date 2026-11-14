@@ -13,7 +13,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const {
     id, steam_app_id, name, image_url, price, rating, status, queue_position,
     tags, notes, hours_played, date_added, is_custom, steam_url,
-    player_count, player_count_recent,
+    player_count, player_count_recent, date_completed,
   } = body
 
   if (steam_app_id) {
@@ -26,13 +26,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   await env.DB.prepare(`
     INSERT INTO games (id, steam_app_id, name, image_url, price, rating, status, queue_position,
-      tags, notes, hours_played, date_added, is_custom, steam_url, player_count, player_count_recent)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      tags, notes, hours_played, date_added, is_custom, steam_url, player_count, player_count_recent, date_completed)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     id, steam_app_id ?? null, name, image_url ?? null, price ?? null, rating ?? null,
     status ?? 'none', queue_position, tags ? JSON.stringify(tags) : null,
     notes ?? null, hours_played ?? 0, date_added, is_custom ? 1 : 0, steam_url ?? null,
-    player_count ?? null, player_count_recent ?? null,
+    player_count ?? null, player_count_recent ?? null, date_completed ?? null,
   ).run()
 
   const game = await env.DB.prepare('SELECT * FROM games WHERE id = ?').bind(id).first()

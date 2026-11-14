@@ -53,7 +53,42 @@ export interface SteamSearchResult {
   player_count_recent?: number | null
 }
 
-export type TabName = 'queue' | 'wishlist' | 'archive'
+export interface Suggestion extends SteamSearchResult {
+  /** Games of yours that Steam lists this one as similar to */
+  because: Array<{ name: string; wishlist: boolean }>
+  /** The tags that pulled it towards your taste */
+  match: string[]
+  review_pct: number | null
+  discount_pct: number | null
+  year: number | null
+  coming_soon: boolean
+  screenshots: string[]
+}
+
+export interface DiscoverFilters {
+  /** Steam tag ids the game must carry (genres and anything else) */
+  tags: number[]
+  /** Steam category ids the game must have: player modes, controller support… */
+  cats: number[]
+  deck: boolean
+  sale: boolean
+  free: boolean
+  /** Hide games that aren't out yet */
+  released: boolean
+}
+
+export interface SteamTag {
+  id: number
+  name: string
+}
+
+export interface DiscoverResult {
+  suggestions: Suggestion[]
+  basedOn: { wishlist: number; queue: number; archive: number }
+  topTags: string[]
+}
+
+export type TabName = 'queue' | 'wishlist' | 'archive' | 'discover'
 
 export type ViewMode = 'covers' | 'list'
 

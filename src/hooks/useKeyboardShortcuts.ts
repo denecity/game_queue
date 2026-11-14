@@ -18,6 +18,7 @@ export function useKeyboardShortcuts({ onSearch, onTabSwitch }: Options) {
       if (e.key === '1') onTabSwitch('queue')
       if (e.key === '2') onTabSwitch('wishlist')
       if (e.key === '3') onTabSwitch('archive')
+      if (e.key === '4') onTabSwitch('discover')
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)

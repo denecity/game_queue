@@ -76,6 +76,23 @@ If the Worker isn't deployed, the app still refreshes one batch each time it's o
 - Refreshes work in small batches of the stalest games, so a big library never times out a request.
   keyforsteam rate-limits bursts, so a circuit breaker backs off and retries those games ~30 min later.
 
+## Discover
+
+The Discover tab is an endless deck of games you don't have yet (`/api/discover`, logic in `server/discover.ts`).
+Swipe right to wishlist, left to pass; the buttons underneath also cover Queue, Played (asks for a rating) and Undo.
+Tap the right or left side of the picture to flip through screenshots.
+
+- **Taste profile**: weighted Steam tags of everything wishlisted, queued, played or rated. A rating counts most
+  (and a low one counts against); wishlisted and queued games count as plain interest; playtime adds to both.
+- **Candidates**: Steam's "More like this" for eight of your games per load (half from the wishlist, reshuffled
+  each time), plus store searches on your strongest tags.
+- **Ranking**: tag match with the profile, nudged by review score and by how many of your games point at it.
+- **Filters**: player modes (singleplayer, co-op, couch co-op…), full controller support, Steam Deck Verified,
+  genres, any other Steam tag, on sale, free, out now. A game has to match all of them; the store searches carry
+  the filters so narrow ones still fill the deck. Modes and controller support come from the store page's
+  official categories, genres from user tags.
+- Passing hides a game for good (stored in `settings` as `discover_dismissed`).
+
 ## Covers
 
 New Steam apps use hashed asset URLs (the old `/steam/apps/{id}/header.jpg` 404s). When a cover fails to load,

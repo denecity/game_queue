@@ -126,13 +126,13 @@ export function useGames() {
     }
   }, [])
 
-  const removeGame = useCallback(async (id: string) => {
+  const removeGame = useCallback(async (id: string, opts: { quiet?: boolean } = {}) => {
     const prev = gamesRef.current.find(g => g.id === id)
     if (!prev) return
     setGames(gs => gs.filter(g => g.id !== id))
     try {
       await api.games.remove(id)
-      showToast(`Removed ${prev.name}`, 'info', {
+      if (!opts.quiet) showToast(`Removed ${prev.name}`, 'info', {
         label: 'Undo',
         run: async () => {
           setGames(gs => [...gs, prev])

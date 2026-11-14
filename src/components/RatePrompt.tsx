@@ -8,17 +8,28 @@ const SCORES = [
   { v: 6, e: '😊' }, { v: 7, e: '😄' }, { v: 8, e: '😍' }, { v: 9, e: '🤩' }, { v: 10, e: '👑' },
 ]
 
-/** Shown when a game moves to Done without a rating. */
-export function RatePrompt({ game, onClose, onDone }: { game: Game; onClose: () => void; onDone: (rating: number | null) => void }) {
+interface Props {
+  /** Leave `id` out for a game that isn't in the library yet; its cover is then shown as is */
+  game: Pick<Game, 'name' | 'image_url'> & { id?: string }
+  onClose: () => void
+  onDone: (rating: number | null) => void
+  title?: string
+  skipLabel?: string
+}
+
+/** Shown when a game moves to Done without a rating, and when adding one you've already played. */
+export function RatePrompt({ game, onClose, onDone, title = 'You finished it!', skipLabel = 'Skip rating, just archive' }: Props) {
   return (
     <Sheet onClose={onClose} bare>
       <div className="relative">
-        <CoverImage id={game.id} name={game.name} src={game.image_url} className="aspect-[460/215] w-full" eager />
+        {game.id
+          ? <CoverImage id={game.id} name={game.name} src={game.image_url} className="aspect-[460/215] w-full" eager />
+          : <img src={game.image_url ?? ''} alt="" className="aspect-[460/215] w-full object-cover bg-ink-800" />}
         <div className="absolute inset-0 bg-gradient-to-t from-ink-900 to-transparent" />
         <div className="absolute inset-0 grid place-items-center text-6xl animate-pop-in">🏆</div>
       </div>
       <div className="px-5 pb-6 -mt-4 relative text-center">
-        <h2 className="font-display text-2xl font-extrabold">You finished it!</h2>
+        <h2 className="font-display text-2xl font-extrabold">{title}</h2>
         <p className="text-ink-400 mt-1 mb-5">How was <b className="text-ink-100">{game.name}</b>?</p>
         <div className="grid grid-cols-5 gap-2">
           {SCORES.map(s => (
@@ -32,7 +43,7 @@ export function RatePrompt({ game, onClose, onDone }: { game: Game; onClose: () 
             </button>
           ))}
         </div>
-        <button onClick={() => onDone(null)} className="mt-5 text-sm text-ink-400 hover:text-ink-100">Skip rating, just archive</button>
+        <button onClick={() => onDone(null)} className="mt-5 text-sm text-ink-400 hover:text-ink-100">{skipLabel}</button>
       </div>
     </Sheet>
   )

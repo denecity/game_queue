@@ -12,6 +12,7 @@ import { GameSheet } from './components/GameSheet'
 import { RatePrompt } from './components/RatePrompt'
 import { EmptyState } from './components/EmptyState'
 import { Settings } from './components/Settings'
+import { Discover } from './components/Discover'
 import { ToastContainer } from './components/Toast'
 import type { Game, GameStatus, SteamSearchResult, TabName, ViewMode } from './lib/types'
 import { api } from './lib/api'
@@ -101,7 +102,7 @@ export default function App() {
   const ratingGame = ratingFor ? games.find(g => g.id === ratingFor) : null
 
   const currentGames = activeTab === 'queue' ? queueGames : activeTab === 'wishlist' ? wishlistGames : archiveGames
-  const counts = { queue: queueGames.length, wishlist: wishlistGames.length, archive: archiveGames.length }
+  const counts = { queue: queueGames.length, wishlist: wishlistGames.length, archive: archiveGames.length, discover: 0 }
   const totalEmpty = !loading && games.length === 0
   const filterActive = filter.tags.length > 0 || filter.rated !== 'all' || filter.onSale
 
@@ -129,14 +130,25 @@ export default function App() {
                 <button onClick={() => setShowSettings(true)} className="btn-icon" aria-label="Settings">⚙️</button>
               </>
             ) : (
-              <button onClick={openSearch} className="btn-icon text-lg" aria-label="Search">🔍</button>
+              <>
+                <button onClick={openSearch} className="btn-icon text-lg" aria-label="Search">🔍</button>
+                <button onClick={() => setShowSettings(true)} className="btn-icon text-lg" aria-label="Settings">⚙️</button>
+              </>
             )}
           </div>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-4 md:px-6 pt-5">
-        {totalEmpty ? (
+        {activeTab === 'discover' ? (
+          <Discover
+            ownedAppIds={ownedAppIds}
+            onAdd={addGame}
+            onRemove={removeGame}
+            onSearch={openSearch}
+            onImport={() => setShowSettings(true)}
+          />
+        ) : totalEmpty ? (
           <EmptyState onSearch={openSearch} onImport={() => setShowSettings(true)} />
         ) : (
           <>
@@ -190,7 +202,7 @@ export default function App() {
         )}
       </main>
 
-      {!isDesktop && <BottomNav active={activeTab} counts={counts} onSwitch={setActiveTab} onAdd={openSearch} onSettings={() => setShowSettings(true)} />}
+      {!isDesktop && <BottomNav active={activeTab} counts={counts} onSwitch={setActiveTab} onAdd={openSearch} />}
 
       {searchOpen && (
         <SearchSheet
@@ -199,6 +211,7 @@ export default function App() {
           onQuickAdd={handleAdd}
           onOpenDetails={r => { setSearchOpen(false); setAddPrefill(r) }}
           onCustom={name => { setSearchOpen(false); setAddPrefill({ customName: name }) }}
+          onDiscover={() => { setSearchOpen(false); setActiveTab('discover') }}
         />
       )}
 

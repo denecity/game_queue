@@ -1,4 +1,4 @@
-import type { Game, SteamSearchResult, ReorderPayload } from './types'
+import type { Game, SteamSearchResult, ReorderPayload, DiscoverResult, DiscoverFilters, SteamTag } from './types'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -60,11 +60,30 @@ export const api = {
     app(appid: number): Promise<SteamSearchResult> {
       return request<SteamSearchResult>(`/api/steam/app/${appid}`)
     },
+    tags(): Promise<SteamTag[]> {
+      return request<SteamTag[]>('/api/steam/tags')
+    },
     importWishlist(url: string): Promise<{ added: number; skipped: number; totalWishlistItems: number }> {
       return request('/api/games/import-wishlist', { method: 'POST', body: JSON.stringify({ url }) })
     },
     importLibrary(profileUrl: string): Promise<{ added: number; skipped: number; total: number }> {
       return request('/api/steam/import-library', { method: 'POST', body: JSON.stringify({ profileUrl }) })
+    },
+  },
+  discover: {
+    get(f: DiscoverFilters, page = 0): Promise<DiscoverResult> {
+      const q = new URLSearchParams()
+      if (f.tags.length) q.set('tags', f.tags.join(','))
+      if (f.cats.length) q.set('cats', f.cats.join(','))
+      for (const flag of ['deck', 'sale', 'free', 'released'] as const) if (f[flag]) q.set(flag, '1')
+      if (page) q.set('page', String(page))
+      return request<DiscoverResult>(`/api/discover?${q}`)
+    },
+    dismiss(appid: number): Promise<void> {
+      return request('/api/discover', { method: 'POST', body: JSON.stringify({ dismiss: appid }) })
+    },
+    restore(appid: number): Promise<void> {
+      return request('/api/discover', { method: 'POST', body: JSON.stringify({ restore: appid }) })
     },
   },
   prices: {

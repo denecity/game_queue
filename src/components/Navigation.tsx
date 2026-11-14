@@ -1,7 +1,7 @@
 import type { TabName } from '../lib/types'
 import { TAB_META, haptic } from '../lib/utils'
 
-const TABS: TabName[] = ['queue', 'wishlist', 'archive']
+const TABS: TabName[] = ['queue', 'wishlist', 'archive', 'discover']
 
 interface Props {
   active: TabName
@@ -22,7 +22,9 @@ export function TabPills({ active, counts, onSwitch }: Props) {
         >
           <span aria-hidden>{TAB_META[t].emoji}</span>
           {TAB_META[t].label}
-          <span className={`text-[11px] tabular-nums rounded-full px-1.5 ${active === t ? 'bg-ink-950/10' : 'bg-white/[.08] text-ink-400'}`}>{counts[t]}</span>
+          {t !== 'discover' && (
+            <span className={`text-[11px] tabular-nums rounded-full px-1.5 ${active === t ? 'bg-ink-950/10' : 'bg-white/[.08] text-ink-400'}`}>{counts[t]}</span>
+          )}
         </button>
       ))}
     </div>
@@ -30,7 +32,7 @@ export function TabPills({ active, counts, onSwitch }: Props) {
 }
 
 /** Floating glass tab bar with a centre add button, for phones. */
-export function BottomNav({ active, counts, onSwitch, onAdd, onSettings }: Props & { onAdd: () => void; onSettings: () => void }) {
+export function BottomNav({ active, counts, onSwitch, onAdd }: Props & { onAdd: () => void }) {
   const left: TabName[] = ['queue', 'wishlist']
   const item = (t: TabName) => (
     <button
@@ -61,13 +63,7 @@ export function BottomNav({ active, counts, onSwitch, onAdd, onSettings }: Props
           ＋
         </button>
         {item('archive')}
-        <button
-          onClick={() => { haptic(6); onSettings() }}
-          className="flex-1 flex flex-col items-center justify-center gap-0.5 h-14 rounded-2xl text-ink-500 transition ease-spring active:scale-90"
-        >
-          <span className="text-xl grayscale opacity-70">⚙️</span>
-          <span className="text-[10px] font-bold tracking-wide">Settings</span>
-        </button>
+        {item('discover')}
       </div>
     </nav>
   )

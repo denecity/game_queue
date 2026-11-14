@@ -43,6 +43,7 @@ export const TAB_META: Record<TabName, { label: string; emoji: string; empty: st
   queue:    { label: 'Queue',    emoji: '🎮', empty: 'Nothing queued. Move something from your wishlist!' },
   wishlist: { label: 'Wishlist', emoji: '✨', empty: 'Your wishlist is empty. Tap + to find games.' },
   archive:  { label: 'Archive',  emoji: '🏆', empty: "You haven't finished anything yet. Go play!" },
+  discover: { label: 'Discover', emoji: '🧭', empty: '' },
 }
 
 /** "CHF 29.00" / "29,99€" / "Free to Play" → number (free = 0, unknown = null) */

@@ -11,6 +11,8 @@ interface Props {
   onQuickAdd: (game: Partial<Game>) => Promise<Game | null>
   onOpenDetails: (result: SteamSearchResult) => void
   onCustom: (name: string) => void
+  /** Leave search for the Discover screen */
+  onDiscover: () => void
 }
 
 export async function detailsToGame(result: SteamSearchResult, status: GameStatus): Promise<Partial<Game>> {
@@ -30,7 +32,7 @@ export async function detailsToGame(result: SteamSearchResult, status: GameStatu
   }
 }
 
-export function SearchSheet({ ownedAppIds, onClose, onQuickAdd, onOpenDetails, onCustom }: Props) {
+export function SearchSheet({ ownedAppIds, onClose, onQuickAdd, onOpenDetails, onCustom, onDiscover }: Props) {
   const { query, setQuery, results, loading, error } = useSteamSearch()
   const [busy, setBusy] = useState<Record<number, 'adding' | 'added'>>({})
   const inputRef = useRef<HTMLInputElement>(null)
@@ -72,6 +74,7 @@ export function SearchSheet({ ownedAppIds, onClose, onQuickAdd, onOpenDetails, o
           <div className="py-10 text-center text-ink-400">
             <div className="text-5xl mb-3 animate-bob">🕹️</div>
             <p className="text-sm">Type a name. Tap ✨ to wishlist or 🎮 to queue it.</p>
+            <button onClick={onDiscover} className="btn-soft mt-5 text-sm">🧭 Not sure? Browse suggestions</button>
           </div>
         )}
 

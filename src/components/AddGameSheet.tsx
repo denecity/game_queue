@@ -14,7 +14,7 @@ interface Props {
 }
 
 function defaultStatusForTab(tab: TabName): GameStatus {
-  if (tab === 'wishlist') return 'none'
+  if (tab === 'wishlist' || tab === 'discover') return 'none'
   if (tab === 'archive') return 'done'
   return 'bought'
 }
