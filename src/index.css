@@ -131,6 +131,8 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: .01ms !important;
+    /* Without this, looping animations (bobbing icons, spinners, shimmer) replay every .01ms and strobe */
+    animation-iteration-count: 1 !important;
     transition-duration: .01ms !important;
   }
 }
