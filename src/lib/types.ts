@@ -77,6 +77,11 @@ export interface DiscoverFilters {
   released: boolean
 }
 
+export interface CoverOption {
+  url: string
+  label: string
+}
+
 export interface SteamTag {
   id: number
   name: string

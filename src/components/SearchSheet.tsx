@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Sheet } from './Sheet'
+import { ArtImg } from './CoverImage'
 import { useSteamSearch } from '../hooks/useSteamSearch'
 import type { Game, GameStatus, SteamSearchResult } from '../lib/types'
 import { api } from '../lib/api'
@@ -84,7 +85,7 @@ export function SearchSheet({ ownedAppIds, onClose, onQuickAdd, onOpenDetails, o
             return (
               <div key={r.appid} className="flex items-center gap-3 p-2 rounded-2xl bg-white/[.03] ring-1 ring-white/[.05] animate-pop-in">
                 <button onClick={() => onOpenDetails(r)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                  <img src={r.image_url} alt="" loading="lazy" className="w-[92px] aspect-[231/87] rounded-xl object-cover bg-ink-800 flex-shrink-0" />
+                  <ArtImg src={r.image_url} alt="" loading="lazy" className="w-[92px] aspect-[231/87] rounded-xl object-cover bg-ink-800 flex-shrink-0" />
                   <div className="min-w-0">
                     <div className="font-display font-bold leading-tight truncate">{r.name}</div>
                     <div className="text-xs font-mono text-ink-400 mt-0.5">{r.price}</div>

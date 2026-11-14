@@ -96,8 +96,19 @@ Tap the right or left side of the picture to flip through screenshots.
 ## Covers
 
 New Steam apps use hashed asset URLs (the old `/steam/apps/{id}/header.jpg` 404s). When a cover fails to load,
-the client asks `/api/images/repair`, which tries Steam store assets → the game's own store page (`og:image`)
-→ Steam search by name → IsThereAnyDeal art, and saves what it finds. If nothing exists, a generated cover is drawn.
+the client first retries it as a plain image, then asks `/api/images/repair` (20 games per call), naming the link
+that failed. The server tries the Steam header → other Steam art → the legacy header path → the game's own store
+page (`og:image`) → a Steam game of exactly the same name → IsThereAnyDeal art with exactly the same title. Steam
+links are checked before they are returned, and a cover that still works is never replaced. If nothing exists, a
+generated cover is drawn.
+
+"Choose a cover" in a game's sheet lists every candidate (`/api/images/options`): header, store capsule, library
+banner, screenshots, and for games not linked to Steam the store page picture plus same-name lookalikes.
+
+All Steam art is loaded in CORS mode (`ArtImg`), and the service worker keeps CORS and plain image responses in
+separate caches (`art-cors`, `art-plain`). They must stay separate: a picture cached from a plain `<img>` is
+opaque, and serving that to a CORS request makes the image fail, which used to break covers of games you had
+just seen in search or the add sheet.
 
 ## Stack
 

@@ -1,4 +1,4 @@
-import type { Game, SteamSearchResult, ReorderPayload, DiscoverResult, DiscoverFilters, SteamTag } from './types'
+import type { Game, SteamSearchResult, ReorderPayload, DiscoverResult, DiscoverFilters, SteamTag, CoverOption } from './types'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -92,8 +92,12 @@ export const api = {
     },
   },
   images: {
-    repair(body: { ids?: string[]; all?: boolean }): Promise<{ images: Record<string, string | null> }> {
+    /** Up to 20 games per call. `failed` maps a game id to the link the browser couldn't show. */
+    repair(body: { ids: string[]; failed?: Record<string, string> }): Promise<{ images: Record<string, string | null> }> {
       return request('/api/images/repair', { method: 'POST', body: JSON.stringify(body) })
+    },
+    options(id: string): Promise<{ options: CoverOption[] }> {
+      return request(`/api/images/options?id=${encodeURIComponent(id)}`)
     },
   },
   settings: {

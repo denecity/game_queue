@@ -1,6 +1,6 @@
 import type { Game } from '../lib/types'
 import { Sheet } from './Sheet'
-import { CoverImage } from './CoverImage'
+import { ArtImg, CoverImage } from './CoverImage'
 import { haptic } from '../lib/utils'
 
 const SCORES = [
@@ -24,7 +24,7 @@ export function RatePrompt({ game, onClose, onDone, title = 'You finished it!', 
       <div className="relative">
         {game.id
           ? <CoverImage id={game.id} name={game.name} src={game.image_url} className="aspect-[460/215] w-full" eager />
-          : <img src={game.image_url ?? ''} alt="" className="aspect-[460/215] w-full object-cover bg-ink-800" />}
+          : <ArtImg src={game.image_url ?? ''} alt="" className="aspect-[460/215] w-full object-cover bg-ink-800" />}
         <div className="absolute inset-0 bg-gradient-to-t from-ink-900 to-transparent" />
         <div className="absolute inset-0 grid place-items-center text-6xl animate-pop-in">🏆</div>
       </div>

@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Game, GameStatus, Offer } from '../lib/types'
+import type { CoverOption, Game, GameStatus, Offer } from '../lib/types'
 import { Sheet } from './Sheet'
-import { CoverImage } from './CoverImage'
+import { ArtImg, CoverImage } from './CoverImage'
 import { StatusPicker } from './StatusChip'
 import { RatingControl } from './RatingControl'
 import { useArtColor } from './GameCards'
 import { api } from '../lib/api'
-import { formatDate, formatMoney, formatPlayerCount, formatRelativeTime, bestPrice, showToast } from '../lib/utils'
+import { formatDate, formatMoney, formatPlayerCount, formatRelativeTime, bestPrice, haptic, showToast } from '../lib/utils'
 
 interface Props {
   game: Game
@@ -24,6 +24,9 @@ export function GameSheet({ game, onClose, onUpdate, onStatus, onDelete, onRefre
   const [refreshing, setRefreshing] = useState(false)
   const [editingCover, setEditingCover] = useState(false)
   const [coverUrl, setCoverUrl] = useState(game.image_url ?? '')
+  /** Cover picker: closed, loading, or the pictures on offer */
+  const [covers, setCovers] = useState<'closed' | 'loading' | CoverOption[]>('closed')
+  const [deadCovers, setDeadCovers] = useState<string[]>([])
   const notesRef = useRef(notes)
   notesRef.current = notes
 
@@ -48,16 +51,24 @@ export function GameSheet({ game, onClose, onUpdate, onStatus, onDelete, onRefre
     }
   }
 
-  async function findCover() {
+  async function openCovers() {
+    setCovers('loading')
+    setDeadCovers([])
     try {
-      const { images } = await api.images.repair({ ids: [game.id] })
-      const url = images[game.id]
-      if (url && url !== game.image_url) { onUpdate(game.id, { image_url: url }); setCoverUrl(url); showToast('Found a new cover ✨', 'success') }
-      else showToast('No better cover found. Paste an image URL instead.', 'info')
+      setCovers((await api.images.options(game.id)).options)
     } catch {
-      showToast('Cover search failed', 'error')
+      setCovers('closed')
+      showToast('Cover search failed. Try again in a moment.', 'error')
     }
   }
+
+  function pickCover(url: string) {
+    haptic(10)
+    onUpdate(game.id, { image_url: url })
+    setCoverUrl(url)
+  }
+
+  const coverChoices = Array.isArray(covers) ? covers.filter(c => !deadCovers.includes(c.url)) : []
 
   const best = bestPrice(game)
   const storeOffers = game.offers.filter(o => o.kind === 'store')
@@ -150,6 +161,40 @@ export function GameSheet({ game, onClose, onUpdate, onStatus, onDelete, onRefre
         </section>
 
         <section>
+          <div className="label">Cover</div>
+          {covers !== 'closed' && (
+            <div className="mb-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {covers === 'loading' && Array.from({ length: 6 }, (_, i) => <div key={i} className="skeleton rounded-2xl aspect-[460/215]" />)}
+                {coverChoices.map(c => {
+                  const current = c.url === game.image_url
+                  return (
+                    <button
+                      key={c.url}
+                      onClick={() => pickCover(c.url)}
+                      aria-pressed={current}
+                      className={`group text-left rounded-2xl overflow-hidden bg-ink-800 transition duration-200 ease-spring active:scale-95
+                        ${current ? 'ring-2 ring-pop-violet' : 'ring-1 ring-white/[.08] hover:ring-white/30'}`}
+                    >
+                      <ArtImg
+                        src={c.url}
+                        alt=""
+                        loading="lazy"
+                        onError={() => setDeadCovers(d => [...d, c.url])}
+                        className="aspect-[460/215] w-full object-cover"
+                      />
+                      <span className={`block px-2.5 py-1.5 text-[11px] font-semibold truncate ${current ? 'text-pop-violet' : 'text-ink-400'}`}>
+                        {current ? '✓ ' : ''}{c.label}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+              {Array.isArray(covers) && coverChoices.length === 0 && (
+                <p className="text-sm text-ink-400">No pictures found for this one. Paste an image link instead.</p>
+              )}
+            </div>
+          )}
           {editingCover ? (
             <div className="flex gap-2">
               <input value={coverUrl} onChange={e => setCoverUrl(e.target.value)} placeholder="https://…/cover.jpg" className="field" />
@@ -157,8 +202,10 @@ export function GameSheet({ game, onClose, onUpdate, onStatus, onDelete, onRefre
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
-              <button className="btn-soft text-sm" onClick={findCover}>🖼️ Find a better cover</button>
-              <button className="btn-soft text-sm" onClick={() => setEditingCover(true)}>✏️ Custom cover URL</button>
+              {covers === 'closed'
+                ? <button className="btn-soft text-sm" onClick={openCovers}>🖼️ Choose a cover</button>
+                : <button className="btn-soft text-sm" onClick={() => setCovers('closed')}>Done</button>}
+              <button className="btn-soft text-sm" onClick={() => setEditingCover(true)}>✏️ Paste image link</button>
             </div>
           )}
         </section>

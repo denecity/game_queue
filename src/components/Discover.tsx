@@ -6,7 +6,7 @@ import { CATEGORY_OPTIONS, EMPTY_DISCOVER_FILTERS, FLAG_OPTIONS, countFilters } 
 import { haptic, readLocal, writeLocal } from '../lib/utils'
 import { detailsToGame } from './SearchSheet'
 import { DiscoverFilterSheet } from './DiscoverFilterSheet'
-import { GeneratedCover } from './CoverImage'
+import { ArtImg, GeneratedCover } from './CoverImage'
 import { RatePrompt } from './RatePrompt'
 
 interface Props {
@@ -425,6 +425,8 @@ function Gallery({ card, live }: { card: Suggestion; live: boolean }) {
   useEffect(() => {
     if (!live || i + 1 >= slides.length) return
     const img = new Image()
+    // Same mode as ArtImg, so the warmed-up copy is the one that gets shown
+    if (/steamstatic/.test(slides[i + 1])) img.crossOrigin = 'anonymous'
     img.src = slides[i + 1]
   }, [live, i]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -434,8 +436,8 @@ function Gallery({ card, live }: { card: Suggestion; live: boolean }) {
         <div className="absolute inset-0 [container-type:inline-size]"><GeneratedCover name={card.name} className="w-full h-full" /></div>
       ) : (
         <>
-          <img src={src} alt="" draggable={false} className="absolute inset-0 w-full h-full object-cover blur-2xl scale-125 opacity-70" />
-          <img
+          <ArtImg src={src} alt="" draggable={false} className="absolute inset-0 w-full h-full object-cover blur-2xl scale-125 opacity-70" />
+          <ArtImg
             src={src}
             alt=""
             draggable={false}

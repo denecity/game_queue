@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react'
+import { forwardRef, memo, useEffect, useState, type ImgHTMLAttributes } from 'react'
 import { requestImageRepair } from '../lib/imageRepair'
 import { hashString } from '../lib/utils'
 
@@ -26,6 +26,34 @@ export function GeneratedCover({ name, className = '' }: { name: string; classNa
     </div>
   )
 }
+
+/**
+ * <img> for remote art. Steam's CDN allows CORS, and loading in CORS mode lets the colour sampler and
+ * every other view share one cached copy. If a CORS load fails anyway, it tries once more as a plain image
+ * before reporting the error.
+ */
+export const ArtImg = forwardRef<HTMLImageElement, ImgHTMLAttributes<HTMLImageElement> & { src: string }>(
+  function ArtImg({ src, onError, ...rest }, ref) {
+    const [plain, setPlain] = useState(false)
+    const [prev, setPrev] = useState(src)
+    if (src !== prev) {
+      setPrev(src)
+      setPlain(false)
+    }
+    const cors = !plain && /steamstatic\.com\//.test(src)
+    return (
+      <img
+        // Remount when the mode changes, so the browser starts a fresh request
+        key={cors ? 'cors' : 'plain'}
+        {...rest}
+        ref={ref}
+        src={src}
+        crossOrigin={cors ? 'anonymous' : undefined}
+        onError={e => { if (cors) setPlain(true); else onError?.(e) }}
+      />
+    )
+  }
+)
 
 interface Props {
   id: string
@@ -55,7 +83,7 @@ export const CoverImage = memo(function CoverImage({ id, name, src, className = 
   }, [id, src])
 
   async function handleError() {
-    const url = await requestImageRepair(id)
+    const url = await requestImageRepair(id, current ?? undefined)
     if (url && url !== current) setCurrent(url)
     else setFailed(true)
   }
@@ -67,11 +95,9 @@ export const CoverImage = memo(function CoverImage({ id, name, src, className = 
   return (
     <div className={`relative overflow-hidden bg-ink-800 ${className}`}>
       {!loaded && <div className="absolute inset-0 skeleton" />}
-      <img
+      <ArtImg
         ref={img => { if (img?.complete && img.naturalWidth > 0 && !loaded) setLoaded(true) }}
         src={current}
-        // Steam's CDN allows CORS; loading it in CORS mode lets the colour sampler reuse the cached image
-        crossOrigin={/steamstatic\.com\//.test(current) ? 'anonymous' : undefined}
         alt=""
         loading={eager ? 'eager' : 'lazy'}
         decoding="async"

@@ -47,11 +47,23 @@ export default defineConfig({
             options: { cacheName: 'api-steam', expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 } },
           },
           {
+            // Art loaded in CORS mode (Steam's CDN). Kept apart from the cache below: a picture cached from a
+            // plain <img> is opaque, and handing that to a CORS request makes the image fail to load.
+            urlPattern: ({ request, url }) => request.destination === 'image' && url.origin !== self.location.origin && request.mode === 'cors',
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'art-cors',
+              expiration: { maxEntries: 800, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
+            // Covers pasted from hosts without CORS headers. Few entries: browsers count each opaque one as several MB.
             urlPattern: ({ request, url }) => request.destination === 'image' && url.origin !== self.location.origin,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'covers',
-              expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheName: 'art-plain',
+              expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 30 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

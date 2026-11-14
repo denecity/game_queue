@@ -32,6 +32,7 @@ export function Settings({ games, onClose, onDataChanged }: Props) {
   const [syncState, setSyncState] = useState<Record<string, string>>({})
   const [priceProgress, setPriceProgress] = useState<string | null>(null)
   const [imageState, setImageState] = useState<string | null>(null)
+  const [checkingCovers, setCheckingCovers] = useState(false)
   const [confirmText, setConfirmText] = useState('')
 
   // Sync sources live in D1 so they follow you to your phone; migrate any old localStorage list once
@@ -101,14 +102,26 @@ export function Settings({ games, onClose, onDataChanged }: Props) {
   }
 
   async function repairImages() {
-    setImageState('Looking for covers…')
+    let replaced = 0
+    let missing = 0
+    setCheckingCovers(true)
     try {
-      const { images } = await api.images.repair({ all: true })
-      const n = Object.values(images).filter(Boolean).length
-      setImageState(`✓ Checked ${n} covers`)
-      onDataChanged()
+      // The server checks each link, so this goes in small batches
+      for (let i = 0; i < games.length; i += 20) {
+        setImageState(`Checking covers… ${i}/${games.length}`)
+        const batch = games.slice(i, i + 20)
+        const { images } = await api.images.repair({ ids: batch.map(g => g.id) })
+        for (const g of batch) {
+          if (!images[g.id]) missing++
+          else if (images[g.id] !== g.image_url) replaced++
+        }
+      }
+      setImageState(`✓ Checked ${games.length} covers: ${replaced} replaced${missing ? `, ${missing} with no art found` : ''}`)
+      if (replaced) onDataChanged()
     } catch (e) {
       setImageState('✗ ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setCheckingCovers(false)
     }
   }
 
@@ -190,8 +203,8 @@ export function Settings({ games, onClose, onDataChanged }: Props) {
           {priceProgress && <p className="text-xs text-ink-300 mt-2">{priceProgress}</p>}
         </Section>
 
-        <Section title="🖼️ Covers" hint="Re-fetch artwork for every Steam game. Broken covers also fix themselves as you scroll.">
-          <button onClick={repairImages} className="btn-soft w-full">Repair all covers</button>
+        <Section title="🖼️ Covers" hint="Checks every cover and replaces the ones whose link has died. Covers that still work, including ones you picked yourself, are left alone. Broken covers also fix themselves as you scroll.">
+          <button onClick={repairImages} disabled={checkingCovers} className="btn-soft w-full">Repair all covers</button>
           {imageState && <p className="text-xs text-ink-300 mt-2">{imageState}</p>}
         </Section>
 

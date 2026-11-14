@@ -7,6 +7,8 @@ export interface StoreItem {
   name: string
   header: string | null
   capsule: string | null
+  /** Other store art, for when the header is missing or you want a different cover */
+  art: { headerSharp: string | null; wideCapsule: string | null; smallCapsule: string | null; libraryHero: string | null }
   price: string | null
   tags: string[]
   /** Steam's 0 = game; demos, DLC, soundtracks etc. have other values */
@@ -45,8 +47,10 @@ interface RawStoreItem {
   assets?: {
     asset_url_format?: string
     header?: string
+    header_2x?: string
     main_capsule?: string
     small_capsule?: string
+    library_hero?: string
   }
   best_purchase_option?: { formatted_final_price?: string; discount_pct?: number }
 }
@@ -111,6 +115,12 @@ export async function getStoreItems(
           name: item.name,
           header: assetUrl(fmt, item.assets?.header),
           capsule: assetUrl(fmt, item.assets?.main_capsule) ?? assetUrl(fmt, item.assets?.small_capsule),
+          art: {
+            headerSharp: assetUrl(fmt, item.assets?.header_2x),
+            wideCapsule: assetUrl(fmt, item.assets?.main_capsule),
+            smallCapsule: assetUrl(fmt, item.assets?.small_capsule),
+            libraryHero: assetUrl(fmt, item.assets?.library_hero),
+          },
           price: item.is_free ? 'Free to Play' : (item.best_purchase_option?.formatted_final_price ?? null),
           tags: names ? (item.tagids ?? []).slice(0, 6).map(id => names.get(id)).filter((n): n is string => !!n) : [],
           type: item.type ?? 0,

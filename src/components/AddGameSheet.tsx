@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Game, GameStatus, SteamSearchResult, TabName } from '../lib/types'
 import { Sheet } from './Sheet'
 import { StatusPicker } from './StatusChip'
-import { GeneratedCover } from './CoverImage'
+import { ArtImg, GeneratedCover } from './CoverImage'
 import { api } from '../lib/api'
 
 interface Props {
@@ -70,7 +70,7 @@ export function AddGameSheet({ prefill, activeTab, onConfirm, onClose }: Props) 
       <form onSubmit={submit} className="px-5 pb-6 space-y-4">
         <div className="rounded-3xl overflow-hidden aspect-[460/215] bg-ink-800 [container-type:inline-size]">
           {imageUrl && imgOk
-            ? <img src={imageUrl} alt="" className="w-full h-full object-cover" onError={() => setImgOk(false)} />
+            ? <ArtImg src={imageUrl} alt="" className="w-full h-full object-cover" onError={() => setImgOk(false)} />
             : <GeneratedCover name={name || '?'} className="w-full h-full" />}
         </div>
         {details?.description && <p className="text-sm text-ink-400 leading-relaxed">{details.description}</p>}

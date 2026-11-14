@@ -86,19 +86,20 @@ export async function itadPrices(itadIds: string[], key: string): Promise<Map<st
   return out
 }
 
-/** Best-guess cover art for a title that isn't on Steam. */
-export async function itadAssetsByTitle(title: string, key: string): Promise<string | null> {
+/** Games ITAD knows under a similar title, with their banner art. The caller decides which title is a match. */
+export async function itadArtByTitle(title: string, key: string): Promise<Array<{ title: string; url: string }>> {
+  const out: Array<{ title: string; url: string }> = []
   try {
-    const res = await fetchT(`${ITAD}/games/search/v1?key=${key}&title=${encodeURIComponent(title)}&results=3`)
-    if (!res.ok) return null
-    const hits = await res.json() as Array<{ assets?: Record<string, string> }>
+    const res = await fetchT(`${ITAD}/games/search/v1?key=${key}&title=${encodeURIComponent(title)}&results=5`)
+    if (!res.ok) return out
+    const hits = await res.json() as Array<{ title?: string; assets?: Record<string, string> }>
     for (const h of hits) {
       const a = h.assets ?? {}
-      const url = a.banner600 ?? a.banner400 ?? a.boxart ?? a.banner300
-      if (url) return url
+      const url = a.banner600 ?? a.banner400 ?? a.banner300 ?? a.boxart
+      if (url && h.title) out.push({ title: h.title, url })
     }
   } catch {
-    // ignore
+    // ITAD unavailable
   }
-  return null
+  return out
 }
